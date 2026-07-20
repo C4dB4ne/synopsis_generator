@@ -1,0 +1,42 @@
+---
+config:
+  flowchart:
+    curve: linear
+---
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	collect_requirements(collect_requirements)
+	request_clarification(request_clarification)
+	genre_router(genre_router)
+	fantasy_writer(fantasy_writer)
+	drama_writer(drama_writer)
+	thriller_writer(thriller_writer)
+	comedy_writer(comedy_writer)
+	universal_writer(universal_writer)
+	critic(critic)
+	language_editor(language_editor)
+	__end__([<p>__end__</p>]):::last
+	__start__ --> collect_requirements;
+	collect_requirements -.-> genre_router;
+	collect_requirements -.-> request_clarification;
+	comedy_writer --> critic;
+	critic -.-> comedy_writer;
+	critic -.-> drama_writer;
+	critic -.-> fantasy_writer;
+	critic -.-> language_editor;
+	critic -.-> thriller_writer;
+	critic -.-> universal_writer;
+	drama_writer --> critic;
+	fantasy_writer --> critic;
+	genre_router -.-> comedy_writer;
+	genre_router -.-> drama_writer;
+	genre_router -.-> fantasy_writer;
+	genre_router -.-> thriller_writer;
+	genre_router -.-> universal_writer;
+	thriller_writer --> critic;
+	universal_writer --> critic;
+	language_editor --> __end__;
+	request_clarification --> __end__;
+	classDef default fill:#f2f0ff,line-height:1.2
+	classDef first fill-opacity:0
+	classDef last fill:#bfb6fc

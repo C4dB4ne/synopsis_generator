@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+pydantic-settings
+httpx
+psycopg[binary,pool]
+langgraph
+langchain-ollama
+langgraph-checkpoint-postgres
