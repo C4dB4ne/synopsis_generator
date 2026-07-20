@@ -1,17 +1,22 @@
 import httpx
 import psycopg
+import logging
+
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import RedirectResponse
 
 from app.config import settings
 from app.graph.builder import synopsis_graph
 from app.api.schemas import SynopsisRequest, SynopsisResponse
-from app.mcp.client import get_mcp_tools_safely
+from app.mcp.client import get_mcp_tools_safely, find_mcp_tool
 
 app = FastAPI(
     title=settings.app_name,
     version="0.1.0",
 )
+
+
+logger = logging.getLogger("uvicorn.error")
 
 
 @app.get("/health")
@@ -99,6 +104,47 @@ async def generate_synopsis(request: SynopsisRequest):
             "recursion_limit": 20,
         },
     )
+
+    save_tool = find_mcp_tool(
+        mcp_tools,
+        "save_synopsis",
+    )
+
+    if save_tool is not None:
+        try:
+            save_result = await save_tool.ainvoke(
+                {
+                    "idea": request.idea or "",
+                    "genre": request.genre or "",
+                    "style": request.style or "",
+                    "language": request.language or "",
+                    "requested_length": request.length or "",
+                    "selected_writer": result.get("selected_writer"),
+                    "draft": result.get("draft"),
+                    "final_text": result.get("final_text"),
+                    "critique_passed": result.get("critique_passed"),
+                    "critique_score": result.get("critique_score"),
+                    "revision_count": result.get("revision_count", 0),
+                }
+            )
+
+            logger.info(
+                "save_synopsis MCP result: %s",
+                save_result,
+            )
+
+        except Exception as exc:
+            logger.warning(
+                "Failed to persist synopsis through MCP. "
+                "Continuing without persistence. Error: %s",
+                exc,
+            )
+
+    elif mcp_tools:
+        logger.warning(
+            "MCP Server is available, but "
+            "'save_synopsis' tool was not found."
+        )
 
     return SynopsisResponse(
         status=result.get(

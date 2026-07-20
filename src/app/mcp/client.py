@@ -62,3 +62,19 @@ async def get_mcp_tools_safely() -> list[BaseTool]:
     )
 
     return tools
+
+
+def find_mcp_tool(
+    tools: list[BaseTool],
+    tool_name: str,
+) -> BaseTool | None:
+    """
+    Ищет MCP tool по имени среди уже загруженных инструментов.
+
+    Функция не выполняет новое подключение к MCP Server.
+    """
+    for tool in tools:
+        if tool.name == tool_name:
+            return tool
+
+    return None
