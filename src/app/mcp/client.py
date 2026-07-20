@@ -7,7 +7,7 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 from app.config import settings
 
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("uvicorn.error")
 
 
 async def get_mcp_tools_safely() -> list[BaseTool]:
@@ -37,7 +37,7 @@ async def get_mcp_tools_safely() -> list[BaseTool]:
 
     except TimeoutError:
         logger.warning(
-            "WARNING:  MCP Server connection timeout after "
+            "MCP Server connection timeout after "
             "%.1f seconds. Continuing without MCP tools.",
             settings.mcp_connect_timeout_seconds,
         )
@@ -45,14 +45,15 @@ async def get_mcp_tools_safely() -> list[BaseTool]:
 
     except Exception as exc:
         logger.warning(
-            "WARNING:  MCP Server  unavailable. "
+            "MCP Server  unavailable. "
             "Continuing without MCP tools. Error: %s",
             exc,
         )
         return []
 
     logger.info(
-        "MCP Server available. Loaded %d tool(s): %s",
+        "MCP Server available. "
+        "Loaded %d tool(s): %s",
         len(tools),
         [
             tool.name
