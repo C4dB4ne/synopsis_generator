@@ -6,7 +6,7 @@ from fastapi.responses import RedirectResponse
 from app.config import settings
 from app.graph.builder import synopsis_graph
 from app.api.schemas import SynopsisRequest, SynopsisResponse
-
+from app.mcp.client import get_mcp_tools_safely
 
 app = FastAPI(
     title=settings.app_name,
@@ -78,7 +78,7 @@ def dependencies_health() -> dict:
     "/api/v1/synopsis",
     response_model=SynopsisResponse,
 )
-def generate_synopsis(request: SynopsisRequest):
+async def generate_synopsis(request: SynopsisRequest):
     """Запускает LangGraph для генерации синопсиса"""
     initial_state = {
         "idea": request.idea or "",
@@ -91,7 +91,9 @@ def generate_synopsis(request: SynopsisRequest):
         "status": "started",
     }
 
-    result = synopsis_graph.invoke(
+    mcp_tools = await get_mcp_tools_safely()
+
+    result = await synopsis_graph.ainvoke(
         initial_state,
         config={
             "recursion_limit": 20,

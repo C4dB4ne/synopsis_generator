@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     ollama_base_url: str
     llm_model: str
     database_url: str
+    mcp_server_url: str
+    mcp_connect_timeout_seconds: float
 
     model_config = SettingsConfigDict(
         env_file=".env",
