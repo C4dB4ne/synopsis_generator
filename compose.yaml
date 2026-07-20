@@ -26,6 +26,18 @@ services:
       - --reload
 
 
+  mcp:
+    build:
+      context: ./mcp_server
+      dockerfile: Dockerfile
+    container_name: synopsis-mcp-server
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8001:8001"
+    networks:
+      - wata-infra
+
+
 networks:
   wata-infra:
     external: true
