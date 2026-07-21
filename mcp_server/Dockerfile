@@ -13,4 +13,8 @@ RUN pip install --no-cache-dir \
 
 COPY src /app/src
 
+COPY alembic.ini /app/alembic.ini
+COPY migrations /app/migrations
+COPY src /app/src
+
 CMD ["python", "-m", "synopsis_mcp.server"]

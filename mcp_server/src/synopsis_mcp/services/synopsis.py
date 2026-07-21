@@ -39,9 +39,6 @@ class SynopsisService:
             ) as connection:
 
                 with connection.cursor() as cursor:
-                    self._ensure_synopsis_table(
-                        cursor,
-                    )
 
                     cursor.execute(
                         """
@@ -110,34 +107,3 @@ class SynopsisService:
                 created_at=None,
                 error=str(exc),
             )
-
-    @staticmethod
-    def _ensure_synopsis_table(
-        cursor: psycopg.Cursor,
-    ) -> None:
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS synopsis_generations (
-                id BIGSERIAL PRIMARY KEY,
-
-                idea TEXT NOT NULL,
-                genre TEXT NOT NULL,
-                style TEXT NOT NULL,
-                language TEXT NOT NULL,
-                requested_length TEXT NOT NULL,
-
-                selected_writer TEXT,
-
-                draft TEXT,
-                final_text TEXT,
-
-                critique_passed BOOLEAN,
-                critique_score INTEGER,
-                revision_count INTEGER NOT NULL DEFAULT 0,
-
-                created_at TIMESTAMPTZ
-                    NOT NULL
-                    DEFAULT NOW()
-            )
-            """
-        )
