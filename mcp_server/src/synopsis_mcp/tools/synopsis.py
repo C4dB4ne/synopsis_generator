@@ -1,147 +1,136 @@
-import os
+from typing import Annotated
 
-from typing import TypedDict
+from fastmcp import FastMCP
+from fastmcp.dependencies import Depends
+from pydantic import Field
 
-import psycopg
-
-
-class SaveSynopsisResult(TypedDict):
-    """Результат сохранения синопсиса."""
-
-    saved: bool
-    synopsis_id: int | None
-    created_at: str | None
-    error: str | None
+from synopsis_mcp.dependencies import get_synopsis_service
+from synopsis_mcp.schemas.synopsis import SaveSynopsisResult
+from synopsis_mcp.services.synopsis import SynopsisService
 
 
-def save_synopsis(
-    idea: str,
-    genre: str,
-    style: str,
-    language: str,
-    requested_length: str,
-    selected_writer: str | None,
-    draft: str | None,
-    final_text: str | None,
-    critique_passed: bool | None,
-    critique_score: int | None,
-    revision_count: int,
-) -> SaveSynopsisResult:
-    """
-    Сохраняет результат генерации синопсиса в PostgreSQL.
-
-    При недоступности PostgreSQL возращает saved=False,
-    а MCP Server продолжает работать.
-    """
-    try:
-        database_url = os.environ.get("DATABASE_URL")
-
-        if not database_url:
-            raise RuntimeError("DATABASE_URL is not configured")
-
-        with psycopg.connect(
-            database_url,
-            connect_timeout=3,
-        ) as connection:
-
-            with connection.cursor() as cursor:
-                _ensure_synopsis_table(cursor)
-
-                cursor.execute(
-                    """
-                    INSERT INTO synopsis_generations (
-                        idea,
-                        genre,
-                        style,
-                        language,
-                        requested_length,
-                        selected_writer,
-                        draft,
-                        final_text,
-                        critique_passed,
-                        critique_score,
-                        revision_count
-                    )
-                    VALUES (
-                        %s,
-                        %s,
-                        %s,
-                        %s,
-                        %s,
-                        %s,
-                        %s,
-                        %s,
-                        %s,
-                        %s,
-                        %s
-                    )
-                    RETURNING
-                        id,
-                        created_at
-                    """,
-                    (
-                        idea,
-                        genre,
-                        style,
-                        language,
-                        requested_length,
-                        selected_writer,
-                        draft,
-                        final_text,
-                        critique_passed,
-                        critique_score,
-                        revision_count,
-                    ),
-                )
-                synopsis_id, created_at = cursor.fetchone()
-
-            connection.commit()
-
-        return {
-            "saved": True,
-            "synopsis_id": synopsis_id,
-            "created_at": created_at.isoformat(),
-            "error": None,
-        }
-
-    except Exception as exc:
-        return {
-            "saved": False,
-            "synopsis_id": None,
-            "created_at": None,
-            "error": str(exc),
-        }
-
-
-def _ensure_synopsis_table(
-    cursor: psycopg.Cursor,
+def register_synopsis_tools(
+    mcp: FastMCP,
 ) -> None:
-    """
-    Создаёт таблицу для истории генераций,
-    если она ещё не существует.
-    """
+    """Регистрирует инструменты работы с синопсисами."""
 
-    cursor.execute(
+    @mcp.tool()
+    def save_synopsis(
+        idea: Annotated[
+            str,
+            Field(
+                min_length=1,
+                description="Исходная идея произведения.",
+            ),
+        ],
+        genre: Annotated[
+            str,
+            Field(
+                min_length=1,
+                description="Жанр произведения.",
+            ),
+        ],
+        style: Annotated[
+            str,
+            Field(
+                description="Требуемая стилистика.",
+            ),
+        ],
+        language: Annotated[
+            str,
+            Field(
+                description="Язык синопсиса.",
+            ),
+        ],
+        requested_length: Annotated[
+            str,
+            Field(
+                description=(
+                    "Требование пользователя "
+                    "к объёму синопсиса."
+                ),
+            ),
+        ],
+        final_text: Annotated[
+            str,
+            Field(
+                min_length=1,
+                description=(
+                    "Готовый финальный текст "
+                    "синопсиса."
+                ),
+            ),
+        ],
+        selected_writer: Annotated[
+            str | None,
+            Field(
+                description=(
+                    "Writer-узел, создавший "
+                    "синопсис."
+                ),
+            ),
+        ] = None,
+        draft: Annotated[
+            str | None,
+            Field(
+                description=(
+                    "Последняя версия черновика."
+                ),
+            ),
+        ] = None,
+        critique_passed: Annotated[
+            bool | None,
+            Field(
+                description=(
+                    "Прошёл ли синопсис "
+                    "проверку Critic."
+                ),
+            ),
+        ] = None,
+        critique_score: Annotated[
+            int | None,
+            Field(
+                ge=0,
+                le=10,
+                description="Оценка Critic.",
+            ),
+        ] = None,
+        revision_count: Annotated[
+            int,
+            Field(
+                ge=0,
+                description=(
+                    "Количество выполненных "
+                    "итераций доработки."
+                ),
+            ),
+        ] = 0,
+        service: SynopsisService = Depends(
+            get_synopsis_service,
+        ),
+    ) -> SaveSynopsisResult:
         """
-        CREATE TABLE IF NOT EXISTS synopsis_generations (
-            id BIGSERIAL PRIMARY KEY,
+        Сохраняет готовый результат генерации синопсиса.
 
-            idea TEXT NOT NULL,
-            genre TEXT NOT NULL,
-            style TEXT NOT NULL,
-            language TEXT NOT NULL,
-            requested_length TEXT NOT NULL,
+        Используй инструмент только после получения готового
+        текста синопсиса.
 
-            selected_writer TEXT,
+        Инструмент сохраняет результат в PostgreSQL и возвращает
+        идентификатор сохранённой записи.
 
-            draft TEXT,
-            final_text TEXT,
+        При недоступности PostgreSQL возвращает saved=false.
+        """
 
-            critique_passed BOOLEAN,
-            critique_score INTEGER,
-            revision_count INTEGER NOT NULL DEFAULT 0,
-
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        return service.save_synopsis(
+            idea=idea,
+            genre=genre,
+            style=style,
+            language=language,
+            requested_length=requested_length,
+            selected_writer=selected_writer,
+            draft=draft,
+            final_text=final_text,
+            critique_passed=critique_passed,
+            critique_score=critique_score,
+            revision_count=revision_count,
         )
-        """
-    )
