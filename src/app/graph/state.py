@@ -14,6 +14,8 @@ class SynopsisState(TypedDict, total=False):
     # Проверка полноты ТЗ
     requirements_complete: bool
     missing_fields: list[str]
+    ambiguous_fields: list[str]
+    clarification_points: list[str]
     clarification_message: str
 
     # Маршрутизация

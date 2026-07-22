@@ -1,44 +1,68 @@
-from pydantic import BaseModel, Field
+import logging
 
 from app.graph.state import SynopsisState
 from app.graph.llm import (
+    create_requirements_llm,
+    create_clarification_llm,
     create_writer_llm,
     create_critic_llm,
-    create_editor_llm
+    create_editor_llm,
+)
+from app.graph.prompts import (
+    REQUIREMENTS_ANALYSIS_PROMPT,
+    CLARIFICATION_REQUEST_PROMPT,
+)
+from app.graph.schemas import (
+    ClarificationRequest,
+    RequirementField,
+    RequirementsAnalysis,
+    CritiqueResult,
 )
 
 
-class CritiqueResult(BaseModel):
-    """
-    Результат работы критика.
-
-    LLM должна вернуть данные именно в этой структуре,
-    а не произвольный текст.
-    """
-    score: int = Field(
-        ge=1,
-        le=10,
-        description="Оценка синопсиса по шкале от 1 до 10.",
+requirements_analyzer = (
+    create_requirements_llm()
+    .with_structured_output(
+        RequirementsAnalysis,
+        method="json_schema",
     )
+)
 
-    must_revise: bool = Field(
-        description=(
-            "True, если текст требует доработки. "
-            "False, если текст можно передать редактору."
-        ),
-    )
 
-    issues: list[str] = Field(
-        default_factory=list,
-        description="Список проблем, выявленных критиком в синопсисе.",
+clarification_generator = (
+    create_clarification_llm()
+    .with_structured_output(
+        ClarificationRequest,
+        method="json_schema",
     )
+)
 
-    revision_instructions: str = Field(
-        description=(
-            "Краткие и конкретные инструкции по исправлению текущей "
-            "версии для писателя."
-        ),
-    )
+
+logger = logging.getLogger("uvicorn.error")
+
+
+REQUIRED_FIELDS: tuple[
+    RequirementField,
+    ...,
+] = (
+    "idea",
+    "genre",
+    "style",
+    "language",
+    "length",
+)
+
+
+FIELD_LABELS: dict[
+    RequirementField,
+    str,
+] = {
+    "idea": "идею произведения",
+    "genre": "жанр",
+    "style": "желаемую стилистику",
+    "language": "язык итогового текста",
+    "length": "требуемый объём",
+}
 
 
 writer_llm = create_writer_llm()
@@ -53,60 +77,322 @@ structured_critique_llm = critic_llm.with_structured_output(
 
 def collect_requirements(state: SynopsisState):
     """
-    Проверяет, достаточно ли данных для генерации синопсиса.
-
-    Пока эта нода полностью ручная, но в будущем хочу попробовать
-    использовать LLM для проверки полноты ТЗ.
+    Проверяет, достаточно ли данных для генерации синопсиса,
+    через LLM со structured output.
     """
-    required_fields = {
-        "idea": "Идея",
-        "genre": "Жанр",
-        "style": "Стиль",
-        "language": "Язык",
-        "length": "Желаемый объем",
-    }
+    try:
+        messages = (
+            REQUIREMENTS_ANALYSIS_PROMPT
+            .format_messages(
+                idea=state.get(
+                    "idea",
+                    "",
+                ),
+                genre=state.get(
+                    "genre",
+                    "",
+                ),
+                style=state.get(
+                    "style",
+                    "",
+                ),
+                language=state.get(
+                    "language",
+                    "",
+                ),
+                length=state.get(
+                    "length",
+                    "",
+                ),
+            )
+        )
 
-    missing_fields: list[str] = []
+        analysis = requirements_analyzer.invoke(
+            messages,
+        )
 
-    for field_name, human_name in required_fields.items():
-        value = state.get(field_name)
+        if not isinstance(
+            analysis,
+            RequirementsAnalysis,
+        ):
+            raise TypeError(
+                "Requirements analyzer returned "
+                "an unexpected result type."
+            )
 
-        if not value or not str(value).strip():
-            missing_fields.append(human_name)
+        missing_fields = _unique_fields(
+            analysis.missing_fields,
+        )
 
-    if missing_fields:
+        ambiguous_fields = [
+            field
+            for field in _unique_fields(
+                analysis.ambiguous_fields,
+            )
+            if field not in missing_fields
+        ]
+
+        clarification_points = [
+            point.strip()
+            for point in analysis.clarification_points
+            if point.strip()
+        ]
+
+        has_issues = bool(
+            missing_fields
+            or ambiguous_fields
+            or clarification_points
+        )
+
+        if not analysis.requirements_complete and not has_issues:
+            logger.warning(
+                "Requirements analyzer marked requirements incomplete "
+                "but returned no clarification issues."
+            )
+
+        requirements_complete = not has_issues
+
         return {
-            "requirements_complete": False,
+            "requirements_complete": (
+                requirements_complete
+            ),
             "missing_fields": missing_fields,
-            "status": "clarification_required",
+            "ambiguous_fields": ambiguous_fields,
+            "clarification_points": (
+                clarification_points
+            ),
+            "clarification_message": "",
+            "status": (
+                "requirements_complete"
+                if requirements_complete
+                else "requirements_incomplete"
+            ),
         }
 
+    except Exception as exc:
+        logger.warning(
+            "LLM requirements analysis failed. "
+            "Using deterministic fallback. Error: %s",
+            exc,
+        )
+
+        return _fallback_requirements_analysis(
+            state,
+        )
+
+
+def _unique_fields(
+    fields: list[RequirementField],
+) -> list[RequirementField]:
+    """
+    Удаляет повторяющиеся названия полей,
+    сохраняя исходный порядок.
+    """
+    return list(
+        dict.fromkeys(
+            fields,
+        )
+    )
+
+
+def _fallback_requirements_analysis(state: SynopsisState):
+    """
+    Резервная проверка обязательных полей
+    без использования LLM
+    """
+
+    missing_fields: list[
+        RequirementField
+    ] = [
+        field
+        for field in REQUIRED_FIELDS
+        if not str(
+            state.get(
+                field,
+                "",
+            )
+        ).strip()
+    ]
+
+    clarification_points = [
+        (
+            f"Необходимо указать "
+            f"{FIELD_LABELS[field]}."
+        )
+        for field in missing_fields
+    ]
+
+    requirements_complete = (
+        len(missing_fields) == 0
+    )
+
     return {
-        "requirements_complete": True,
-        "missing_fields": [],
-        "status": "requirements_collected",
+        "requirements_complete": (
+            requirements_complete
+        ),
+        "missing_fields": missing_fields,
+        "ambiguous_fields": [],
+        "clarification_points": (
+            clarification_points
+        ),
+        "clarification_message": "",
+        "status": (
+            "requirements_complete"
+            if requirements_complete
+            else "requirements_incomplete"
+        ),
     }
 
 
 def request_clarification(state: SynopsisState):
     """
     Формирует сообщение о недостающих полях.
-
-    Позже на этой ноде буду тестить LangGraph interrupt()
-    чтобы граф реально приостанавливался и ожидал пользователя.
     """
-    missing_fields = state.get("missing_fields", [])
-    fields_text = ", ".join(missing_fields)
+    try:
+        language = (
+            state.get(
+                "language",
+                "",
+            ).strip()
+            or "русский"
+        )
 
-    message = (
-        "Для написания синопсиса недостаточно данных. "
-        f"Пожалуйста, уточните: {fields_text}."
-    )
+        messages = (
+            CLARIFICATION_REQUEST_PROMPT
+            .format_messages(
+                language=language,
+                missing_fields=_format_field_list(
+                    state.get(
+                        "missing_fields",
+                        [],
+                    )
+                ),
+                ambiguous_fields=_format_field_list(
+                    state.get(
+                        "ambiguous_fields",
+                        [],
+                    )
+                ),
+                clarification_points=(
+                    _format_clarification_points(
+                        state.get(
+                            "clarification_points",
+                            [],
+                        )
+                    )
+                ),
+            )
+        )
+
+        clarification = (
+            clarification_generator.invoke(
+                messages,
+            )
+        )
+
+        if not isinstance(
+            clarification,
+            ClarificationRequest,
+        ):
+            raise TypeError(
+                "Clarification generator returned "
+                "an unexpected result type."
+            )
+
+        message = clarification.message.strip()
+
+        if not message:
+            raise ValueError(
+                "Clarification message is empty."
+            )
+
+    except Exception as exc:
+        logger.warning(
+            "LLM clarification generation failed. "
+            "Using deterministic fallback. Error: %s",
+            exc,
+        )
+
+        message = _build_fallback_clarification(
+            state,
+        )
 
     return {
         "clarification_message": message,
-        "status": "clarification_required",
+        "status": "needs_clarification",
     }
+
+
+def _format_field_list(fields: list[str]):
+    if not fields:
+        return "нет"
+
+    return ", ".join(fields)
+
+
+def _format_clarification_points(points: list[str]):
+    if not points:
+        return "нет"
+
+    return "\n".join(
+        f"- {point}"
+        for point in points
+    )
+
+
+def _build_fallback_clarification(state: SynopsisState):
+    """
+    Формирует вопрос без LLM,
+    если structured output завершился ошибкой
+    """
+    missing_fields = state.get("missing_fields", [])
+    ambiguous_fields = state.get("ambiguous_fields", [])
+
+    field_names = list(
+        dict.fromkeys(
+            [
+                *missing_fields,
+                *ambiguous_fields,
+            ]
+        )
+    )
+
+    readable_names = [
+        FIELD_LABELS.get(
+            field,
+            field,
+        )
+        for field in field_names
+    ]
+
+    if readable_names:
+        return (
+            "Пожалуйста, уточните следующие параметры: "
+            + ", ".join(
+                readable_names,
+            )
+            + "."
+        )
+
+    clarification_points = state.get(
+        "clarification_points",
+        [],
+    )
+
+    if clarification_points:
+        return (
+            "Пожалуйста, уточните техническое "
+            "задание с учётом следующих замечаний: "
+            + "; ".join(
+                clarification_points,
+            )
+            + "."
+        )
+
+    return (
+        "Пожалуйста, уточните параметры "
+        "будущего синопсиса."
+    )
 
 
 def genre_router(state: SynopsisState):
