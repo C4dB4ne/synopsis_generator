@@ -3,6 +3,14 @@ from pydantic import BaseModel, Field
 
 class SynopsisRequest(BaseModel):
 
+    message: str = Field(
+        min_length=1,
+        description=(
+            "Свободное описание того, какой текст "
+            "пользователь хочет получить."
+        ),
+    )
+
     idea: str | None = None
     genre: str | None = None
     style: str | None = None
@@ -12,12 +20,11 @@ class SynopsisRequest(BaseModel):
     max_revisions: int = Field(
         default=3,
         ge=0,
-        le=5,
+        le=10,
     )
 
 
 class SynopsisResponse(BaseModel):
-
     status: str
 
     selected_writer: str | None = None

@@ -3,8 +3,10 @@ from typing import TypedDict
 
 class SynopsisState(TypedDict, total=False):
     """Состояние LangGraph."""
+    # Диалог с пользователем
+    latest_user_message: str
 
-    # Исходное ТЗ
+    # Накопленные требования
     idea: str
     genre: str
     style: str
@@ -17,6 +19,10 @@ class SynopsisState(TypedDict, total=False):
     ambiguous_fields: list[str]
     clarification_points: list[str]
     clarification_message: str
+
+    # HITL
+    clarification_count: int
+    max_clarifications: int
 
     # Маршрутизация
     selected_writer: str

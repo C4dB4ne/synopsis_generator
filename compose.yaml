@@ -14,6 +14,7 @@ services:
     volumes:
       - ./src:/app/src
       - ./artifacts:/app/artifacts
+      - ./logs:/app/logs
     networks:
       - wata-infra
     command:

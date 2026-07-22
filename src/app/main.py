@@ -1,22 +1,46 @@
 import httpx
 import psycopg
-import logging
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import RedirectResponse
+from contextlib import asynccontextmanager
 
 from app.config import settings
 from app.graph.builder import synopsis_graph
 from app.api.schemas import SynopsisRequest, SynopsisResponse
 from app.mcp.client import get_mcp_tools_safely, find_mcp_tool
+from app.core.logger import logger
+
+
+@asynccontextmanager
+async def lifespan(
+    app: FastAPI,
+):
+    logger.info(
+        "Starting application: %s",
+        settings.app_name,
+    )
+
+    try:
+        yield
+
+    except Exception:
+        logger.exception(
+            "Unhandled application lifespan error."
+        )
+        raise
+
+    finally:
+        logger.info(
+            "Stopping application: %s",
+            settings.app_name,
+        )
+
 
 app = FastAPI(
     title=settings.app_name,
     version="0.1.0",
+    lifespan=lifespan,
 )
-
-
-logger = logging.getLogger("uvicorn.error")
 
 
 @app.get("/health")
@@ -86,13 +110,22 @@ def dependencies_health() -> dict:
 async def generate_synopsis(request: SynopsisRequest):
     """Запускает LangGraph для генерации синопсиса"""
     initial_state = {
+        "latest_user_message": (
+            request.message or ""
+        ),
+
         "idea": request.idea or "",
         "genre": request.genre or "",
         "style": request.style or "",
         "language": request.language or "",
         "length": request.length or "",
+
+        "clarification_count": 0,
+        "max_clarifications": 3,
+
         "revision_count": 0,
         "max_revisions": request.max_revisions,
+
         "status": "started",
     }
 
@@ -114,17 +147,21 @@ async def generate_synopsis(request: SynopsisRequest):
         try:
             save_result = await save_tool.ainvoke(
                 {
-                    "idea": request.idea or "",
-                    "genre": request.genre or "",
-                    "style": request.style or "",
-                    "language": request.language or "",
-                    "requested_length": request.length or "",
+                    "idea": result.get("idea", ""),
+                    "genre": result.get("genre", ""),
+                    "style": result.get("style", ""),
+                    "language": result.get("language", ""),
+                    "requested_length": result.get("length", ""),
+
                     "selected_writer": result.get("selected_writer"),
                     "draft": result.get("draft"),
                     "final_text": result.get("final_text"),
                     "critique_passed": result.get("critique_passed"),
                     "critique_score": result.get("critique_score"),
-                    "revision_count": result.get("revision_count", 0),
+                    "revision_count": result.get(
+                        "revision_count",
+                        0,
+                    ),
                 }
             )
 

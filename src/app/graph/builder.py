@@ -18,6 +18,7 @@ from app.graph.nodes import (
     thriller_writer,
     universal_writer,
 )
+from app.core.logger import log_graph_node
 
 
 def build_graph():
@@ -29,12 +30,18 @@ def build_graph():
     # УЗЛЫ
     builder.add_node(
         "collect_requirements",
-        collect_requirements,
+        log_graph_node(
+            "collect_requirements",
+            collect_requirements,
+        ),
     )
 
     builder.add_node(
         "request_clarification",
-        request_clarification,
+        log_graph_node(
+            "request_clarification",
+            request_clarification,
+        ),
     )
 
     builder.add_node(
@@ -44,37 +51,58 @@ def build_graph():
 
     builder.add_node(
         "fantasy_writer",
-        fantasy_writer,
+        log_graph_node(
+            "fantasy_writer",
+            fantasy_writer,
+        ),
     )
 
     builder.add_node(
         "drama_writer",
-        drama_writer,
+        log_graph_node(
+            "drama_writer",
+            drama_writer,
+        ),
     )
 
     builder.add_node(
         "thriller_writer",
-        thriller_writer,
+        log_graph_node(
+            "thriller_writer",
+            thriller_writer,
+        ),
     )
 
     builder.add_node(
         "comedy_writer",
-        comedy_writer,
+        log_graph_node(
+            "comedy_writer",
+            comedy_writer,
+        ),
     )
 
     builder.add_node(
         "universal_writer",
-        universal_writer,
+        log_graph_node(
+            "universal_writer",
+            universal_writer,
+        ),
     )
 
     builder.add_node(
         "critic",
-        critic,
+        log_graph_node(
+            "critic",
+            critic,
+        ),
     )
 
     builder.add_node(
         "language_editor",
-        language_editor,
+        log_graph_node(
+            "language_editor",
+            language_editor,
+        ),
     )
 
     # ТОЧКА ВХОДА

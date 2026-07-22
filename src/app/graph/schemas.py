@@ -16,6 +16,42 @@ class RequirementsAnalysis(BaseModel):
     """
     Результат анализа пользовательского ТЗ.
     """
+    idea: str | None = Field(
+        default=None,
+        description=(
+            "Основная идея произведения. "
+            "Не придумывай её, если пользователь не сообщил идею."
+        ),
+    )
+
+    genre: str | None = Field(
+        default=None,
+        description=(
+            "Жанр произведения, указанный пользователем "
+            "или явно переданный им на выбор генератору."
+        ),
+    )
+
+    style: str | None = Field(
+        default=None,
+        description=(
+            "Желаемая художественная стилистика."
+        ),
+    )
+
+    language: str | None = Field(
+        default=None,
+        description=(
+            "Язык итогового текста."
+        ),
+    )
+
+    length: str | None = Field(
+        default=None,
+        description=(
+            "Требуемый объём текста."
+        ),
+    )
 
     requirements_complete: bool = Field(
         description=(

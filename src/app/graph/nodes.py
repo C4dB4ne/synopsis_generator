@@ -84,24 +84,13 @@ def collect_requirements(state: SynopsisState):
         messages = (
             REQUIREMENTS_ANALYSIS_PROMPT
             .format_messages(
-                idea=state.get(
-                    "idea",
-                    "",
-                ),
-                genre=state.get(
-                    "genre",
-                    "",
-                ),
-                style=state.get(
-                    "style",
-                    "",
-                ),
-                language=state.get(
-                    "language",
-                    "",
-                ),
-                length=state.get(
-                    "length",
+                idea=state.get("idea", "") or "не указано",
+                genre=state.get("genre", "") or "не указано",
+                style=state.get("style", "") or "не указано",
+                language=state.get("language", "") or "не указано",
+                length=state.get("length", "") or "не указано",
+                latest_user_message=state.get(
+                    "latest_user_message",
                     "",
                 ),
             )
@@ -110,6 +99,12 @@ def collect_requirements(state: SynopsisState):
         analysis = requirements_analyzer.invoke(
             messages,
         )
+
+        def _clean_requirement(value: str | None):
+            if value is None:
+                return ""
+
+            return value.strip()
 
         if not isinstance(
             analysis,
@@ -152,16 +147,54 @@ def collect_requirements(state: SynopsisState):
 
         requirements_complete = not has_issues
 
-        return {
-            "requirements_complete": (
-                requirements_complete
+        logger.info(
+            (
+                "Requirements analyzed | "
+                "complete=%s | "
+                "genre=%r | "
+                "style=%r | "
+                "language=%r | "
+                "length=%r | "
+                "missing=%s | "
+                "ambiguous=%s"
             ),
+            requirements_complete,
+            analysis.genre,
+            analysis.style,
+            analysis.language,
+            analysis.length,
+            missing_fields,
+            ambiguous_fields,
+        )
+
+        return {
+            "idea": _clean_requirement(
+                analysis.idea
+            ),
+            "genre": _clean_requirement(
+                analysis.genre
+            ),
+            "style": _clean_requirement(
+                analysis.style
+            ),
+            "language": _clean_requirement(
+                analysis.language
+            ),
+            "length": _clean_requirement(
+                analysis.length
+            ),
+
+            "requirements_complete": requirements_complete,
+
             "missing_fields": missing_fields,
             "ambiguous_fields": ambiguous_fields,
+
             "clarification_points": (
                 clarification_points
             ),
+
             "clarification_message": "",
+
             "status": (
                 "requirements_complete"
                 if requirements_complete
@@ -399,22 +432,44 @@ def genre_router(state: SynopsisState):
     """
     Определяет, какой писатель, должен обработать запрос
     """
-    genre = state.get("genre", "").strip().lower()
+    genre = (state.get("genre", "").strip().lower())
 
-    genre_map = {
-        "фэнтези": "fantasy_writer",
-        "fantasy": "fantasy_writer",
-        "драма": "drama_writer",
-        "drama": "drama_writer",
-        "триллер": "thriller_writer",
-        "thriller": "thriller_writer",
-        "комедия": "comedy_writer",
-        "comedy": "comedy_writer",
+    genre_keywords = {
+        "fantasy_writer": (
+            "фэнтези",
+            "fantasy",
+        ),
+        "drama_writer": (
+            "драма",
+            "drama",
+            "драматический",
+            "dramatic",
+        ),
+        "thriller_writer": (
+            "триллер",
+            "thriller",
+        ),
+        "comedy_writer": (
+            "комедия",
+            "comedy",
+            "комедийный",
+        ),
     }
 
-    selected_writer = genre_map.get(
+    selected_writer = "universal_writer"
+
+    for writer, keywords in genre_keywords.items():
+        if any(
+            keyword in genre
+            for keyword in keywords
+        ):
+            selected_writer = writer
+            break
+
+    logger.info(
+        "Genre routing | genre=%r | writer=%s",
         genre,
-        "universal_writer",
+        selected_writer,
     )
 
     return {
@@ -535,6 +590,21 @@ def _run_writer(
         updates["revision_count"] = (
             state.get("revision_count", 0) + 1
         )
+
+    logger.info(
+        (
+            "Writer execution | "
+            "writer=%s | "
+            "revision=%s | "
+            "revision_count=%d"
+        ),
+        writer_role,
+        is_revision,
+        state.get(
+            "revision_count",
+            0,
+        ),
+    )
 
     return updates
 
@@ -657,6 +727,21 @@ def critic(state: SynopsisState):
     passed = (
         not result.must_revise
         and result.score >= 8
+    )
+
+    logger.info(
+        (
+            "Critic result | "
+            "score=%d | "
+            "passed=%s | "
+            "issues=%d | "
+            "revision=%d/%d"
+        ),
+        result.score,
+        passed,
+        len(result.issues),
+        state.get("revision_count", 0),
+        state.get("max_revisions", 3),
     )
 
     return {
