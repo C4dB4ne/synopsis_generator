@@ -7,6 +7,8 @@ graph TD;
 	__start__([<p>__start__</p>]):::first
 	collect_requirements(collect_requirements)
 	request_clarification(request_clarification)
+	wait_for_clarification(wait_for_clarification)
+	clarification_limit_reached(clarification_limit_reached)
 	genre_router(genre_router)
 	fantasy_writer(fantasy_writer)
 	drama_writer(drama_writer)
@@ -17,6 +19,7 @@ graph TD;
 	language_editor(language_editor)
 	__end__([<p>__end__</p>]):::last
 	__start__ --> collect_requirements;
+	collect_requirements -.-> clarification_limit_reached;
 	collect_requirements -.-> genre_router;
 	collect_requirements -.-> request_clarification;
 	comedy_writer --> critic;
@@ -33,10 +36,12 @@ graph TD;
 	genre_router -.-> fantasy_writer;
 	genre_router -.-> thriller_writer;
 	genre_router -.-> universal_writer;
+	request_clarification --> wait_for_clarification;
 	thriller_writer --> critic;
 	universal_writer --> critic;
+	wait_for_clarification --> collect_requirements;
+	clarification_limit_reached --> __end__;
 	language_editor --> __end__;
-	request_clarification --> __end__;
 	classDef default fill:#f2f0ff,line-height:1.2
 	classDef first fill-opacity:0
 	classDef last fill:#bfb6fc

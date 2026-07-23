@@ -1,619 +1,262 @@
-# Synopsis Generator LangGraph
+# synopsis-generator-langgraph
 
-Генератор синопсисов, построенный на базе **LangGraph**
+`synopsis-generator-langgraph` - сервис генерации синопсисов на базе `LangGraph`, `FastAPI`, `Ollama` и `PostgreSQL`.
 
-Приложение принимает описание идеи, жанр, стилистику, язык и требуемый объем текста, после чего направляет запрос специализированному узлу-писателю.
+Приложение:
 
-Сгенерированный текст проверяется отдельным узлом-критиком. Если результат не соответствует исходному техническому заданию, критик возвращает текст писателю на повторную доработку.
+- принимает свободное пользовательское описание;
+- извлекает требования к синопсису;
+- при необходимости запрашивает уточнения;
+- выбирает writer-узел по жанру;
+- прогоняет текст через цикл `writer -> critic -> writer`;
+- выполняет финальную языковую редактуру;
+- сохраняет результат через отдельный MCP-сервер.
 
-После успешного прохождения проверки или достижения максимального количества итераций текст передается языковому редактору.
+## Что внутри
 
-Проект использует локальную LLM **Qwen3 8B**, запущенную через **Ollama** с использованием GPU.
+Состав проекта:
 
----
+- `api` - основной FastAPI-сервис с LangGraph workflow;
+- `mcp` - MCP-сервер для health-check и сохранения синопсисов в PostgreSQL;
+- `artifacts/` - Mermaid и PNG со схемой графа;
+- `src/app/` - код API, графа, маршрутизации и узлов;
+- `mcp_server/` - код MCP-сервера и миграции Alembic.
 
-## Возможности
+Поддерживаемые writer-узлы:
 
-На текущем этапе реализовано:
+- `fantasy_writer`
+- `drama_writer`
+- `thriller_writer`
+- `comedy_writer`
+- `universal_writer`
 
-- построение workflow с помощью LangGraph;
-- хранение общего состояния графа через `TypedDict`;
-- проверка полноты входных данных (пока действуют через полностю ручной узел, но в будущем планирую попробовать использовать LLM для проверки полноты ТЗ);
-- маршрутизация через условные ребра по жанру;
-- узлы-писатели по жанрам + универсальный;
-- генерация синопсиса через локальную LLM;
-- отдельный узел-критик;
-- структурированный ответ критика через Pydantic;
-- повторные проходы `Writer - Critic - Writer`;
-- ограничение максимального количества итераций;
-- отдельный языковой редактор;
-- FastAPI-интерфейс;
-- Swagger UI;
-- проверка соединения с Ollama и PostgreSQL;
-- визуализация реального скомпилированного LangGraph через Mermaid;
-- экспорт графа в `.mmd` и `.png`.
+## Архитектура
 
----
+Базовый сценарий:
 
-## Архитектура LangGraph
+1. `collect_requirements` извлекает `idea`, `genre`, `style`, `language`, `length`.
+2. Если данных не хватает, `request_clarification` формирует вопрос пользователю.
+3. После уточнения граф продолжается через `/api/v1/synopsis/resume`.
+4. `genre_router` выбирает writer по жанру.
+5. `critic` либо отправляет текст на доработку, либо пропускает к `language_editor`.
+6. Готовый результат сохраняется через MCP tool `save_synopsis`.
 
-Основной workflow выглядит следующим образом:
+Граф экспортирован в:
 
-```text
-START
-  │
-  ▼
-collect_requirements
-  │
-  ├── данных недостаточно
-  │         │
-  │         ▼
-  │ request_clarification
-  │         │
-  │         ▼
-  │        END
-  │
-  └── данных достаточно
-            │
-            ▼
-       genre_router
-            │
-      ┌─────┼──────────────┐
-      │     │              │
-      ▼     ▼              ▼
-   fantasy drama        thriller
-   writer  writer        writer
-      │     │              │
-      ├─────┼──────────────┤
-      │     │              │
-      ▼     ▼              ▼
-   comedy_writer     universal_writer
-            │
-            ▼
-          critic
-            │
-       ┌────┴─────┐
-       │          │
-    REVISE       PASS
-       │          │
-       ▼          ▼
-selected_writer  language_editor
-       │          │
-       └─► critic │
-                  ▼
-                 END
-```
+- `artifacts/synopsis_graph.mmd`
+- `artifacts/synopsis_graph.png`
 
-Ключевая особенность графа - циклический переход:
+## Требования
 
-```text
-Writer - Critic - Writer
-```
+Нужно заранее подготовить:
 
-Если критик считает результат неудовлетворительным, текущая версия текста вместе с последними замечаниями отправляется обратно тому же специализированному писателю.
+- Docker и Docker Compose;
+- запущенный `Ollama` с доступной моделью;
+- PostgreSQL;
+- внешнюю Docker-сеть `wata-infra`.
 
-При этом предыдущие версии текста и предыдущие отзывы критика не передаются в новый контекст.
+Проект ожидает, что `Ollama` и `PostgreSQL` уже доступны в сети `wata-infra` под именами:
 
-Writer получает только:
+- `ollama`
+- `postgres`
 
-```text
-Исходное ТЗ
-+
-Текущая версия
-+
-Последние замечания критика
-```
-
-Critic получает:
-
-```text
-Исходное ТЗ
-+
-Текущая версия
-```
-
----
-
-## Визуализация графа
-
-Граф экспортируется непосредственно из скомпилированного LangGraph.
-
-![LangGraph](artifacts/synopsis_graph.png)
-
-Mermaid-исходник:
-
-```text
-artifacts/synopsis_graph.mmd
-```
-
-PNG:
-
-```text
-artifacts/synopsis_graph.png
-```
-
-Для повторной генерации:
+Если сети ещё нет, создайте её:
 
 ```bash
-docker compose exec api \
-  python -m app.graph.export_mermaid
+docker network create wata-infra
 ```
 
-Экспорт выполняется через:
+## Переменные окружения
 
-```python
-synopsis_graph.get_graph().draw_mermaid()
-```
-
-и:
-
-```python
-synopsis_graph.get_graph().draw_mermaid_png()
-```
-
----
-
-## Узлы графа
-
-### `collect_requirements`
-
-Проверяет наличие обязательных входных параметров:
-
-- идея;
-- жанр;
-- стиль;
-- язык;
-- желаемый объем.
-
-LLM на этом этапе не используется.
-
-Если часть данных отсутствует, выполнение направляется в `request_clarification`.
-
----
-
-### `request_clarification`
-
-Формирует сообщение со списком недостающих параметров.
-
-На текущем этапе после этого выполнение завершается.
-
-В дальнейшем планируется использование `interrupt()` LangGraph для приостановки workflow и продолжения после получения ответа пользователя.
-
----
-
-### `genre_router`
-
-Определяет специализированного писателя в зависимости от жанра.
-
-Поддерживаются:
-
-- `fantasy_writer`;
-- `drama_writer`;
-- `thriller_writer`;
-- `comedy_writer`;
-- `universal_writer`.
-
-Если жанр не распознан, используется `universal_writer`.
-
----
-
-### `Writer Nodes`
-
-Узлы:
-
-```text
-fantasy_writer
-drama_writer
-thriller_writer
-comedy_writer
-universal_writer
-```
-
-используют общую функцию `_run_writer()`.
-
-Каждому писателю передается отдельная специализация.
-
-Например:
-
-```text
-thriller_writer
-```
-
-ориентирован на:
-
-- напряжение;
-- опасность;
-- неопределенность;
-- повышение ставок.
-
-При первом вызове Writer создает синопсис с нуля.
-
-При повторном вызове получает текущую версию текста и последние замечания критика.
-
----
-
-### `critic`
-
-Проверяет текущий синопсис по следующим критериям:
-
-1. соответствие исходной идее;
-2. соответствие жанру;
-3. соответствие стилистике;
-4. логичность событий;
-5. наличие центрального конфликта;
-6. мотивация персонажей;
-7. связность повествования;
-8. выразительность истории;
-9. соответствие требуемому языку;
-10. соблюдение формальных требований пользователя, включая объем и количество абзацев.
-
-Critic использует структурированный ответ:
-
-```text
-score
-must_revise
-issues
-revision_instructions
-```
-
-Если оценка ниже требуемой или модель считает необходимой переработку, граф возвращается к выбранному Writer.
-
-Максимальное количество повторных проходов ограничивается параметром:
-
-```text
-max_revisions
-```
-
----
-
-### `language_editor`
-
-Выполняет финальную языковую обработку текста.
-
-Редактор исправляет:
-
-- грамматику;
-- орфографию;
-- пунктуацию;
-- лексические повторы;
-- неестественные формулировки;
-- тяжелые конструкции.
-
-Редактору запрещено изменять:
-
-- сюжет;
-- персонажей;
-- события;
-- центральный конфликт;
-- смысл текста.
-
-Если текст прошел Critic:
-
-```text
-status = completed
-```
-
-Если лимит итераций закончился, но Critic не одобрил результат:
-
-```text
-status = completed_with_warnings
-```
-
----
-
-## Состояние графа
-
-Общее состояние описано через `SynopsisState`
-
-Основные группы данных:
-
-```text
-Исходное ТЗ
-├── idea
-├── genre
-├── style
-├── language
-└── length
-
-Маршрутизация
-└── selected_writer
-
-Рабочий текст
-└── draft
-
-Critic
-├── critique_passed
-├── critique_score
-├── critique_issues
-└── revision_instructions
-
-Контроль цикла
-├── revision_count
-└── max_revisions
-
-Результат
-├── final_text
-└── status
-```
-
----
-
-## Используемая LLM
-
-Основная модель:
-
-```text
-qwen3:8b
-```
-
-Модель запускается локально через Ollama.
-
-Используются три отдельных экземпляра `ChatOllama` с разными настройками.
-
-### Writer
-
-```text
-temperature = 0.6
-reasoning = False
-```
-
-Используется для творческой генерации и переработки текста.
-
-### Critic
-
-```text
-temperature = 0.1
-reasoning = False
-```
-
-Используется для более стабильной оценки результата.
-
-### Language Editor
-
-```text
-temperature = 0.0
-reasoning = False
-```
-
-Используется для максимально детерминированной языковой редакторской обработки.
-
-На тестовом оборудовании используется:
-
-```text
-NVIDIA GeForce RTX 4060 Laptop
-VRAM: 8 GB
-```
-
-При работе `qwen3:8b` Ollama сообщает:
-
-```text
-PROCESSOR: 100% GPU
-CONTEXT: 4096
-MODEL SIZE: ~5.6 GB
-```
-
----
-
-## Технологический стек
-
-- Python 3.13
-- LangGraph
-- LangChain Ollama
-- Ollama
-- Qwen3 8B
-- FastAPI
-- Uvicorn
-- Pydantic
-- PostgreSQL 16
-- Psycopg
-- Docker
-- Docker Compose
-- Mermaid
-
----
-
-## Структура проекта
-
-```text
-synopsis-generator-langgraph
-├── Dockerfile
-├── README.md
-├── artifacts
-│   ├── synopsis_graph.mmd
-│   └── synopsis_graph.png
-├── compose.yaml
-├── requirements.txt
-└── src
-    └── app
-        ├── __init__.py
-        ├── api
-        │   ├── __init__.py
-        │   └── schemas.py
-        ├── config.py
-        ├── graph
-        │   ├── __init__.py
-        │   ├── builder.py
-        │   ├── export_mermaid.py
-        │   ├── llm.py
-        │   ├── nodes.py
-        │   ├── routes.py
-        │   └── state.py
-        └── main.py
-
-5 directories, 18 files
-```
-
----
-
-## Инфраструктура
-
-Ollama и PostgreSQL вынесены в отдельный инфраструктурный Docker Compose проект:
-
-```text
-wata-infrastructure
-├── wata-ollama
-└── wata-postgres
-```
-
-Приложение запускается отдельно:
-
-```text
-synopsis-generator-langgraph
-└── synopsis-generator-api
-```
-
-Все контейнеры подключаются к общей внешней Docker-сети:
-
-```text
-wata-infra
-```
-
-Внутри Docker приложение обращается к сервисам по адресам:
-
-```text
-http://ollama:11434
-postgres:5432
-```
-
-С хоста:
-
-```text
-Ollama:
-127.0.0.1:11434
-
-PostgreSQL:
-127.0.0.1:5432
-
-FastAPI:
-127.0.0.1:8000
-```
-
----
-
-## Запуск приложения
-
-Сначала должна быть запущена инфраструктура:
+1. Скопируйте шаблон:
 
 ```bash
-cd /mnt/c/WATA/Infrastructure
-
-docker compose up -d
+cp .env.example .env
 ```
 
-Затем приложение:
+2. Проверьте значения в `.env`.
+
+Основные переменные:
+
+- `OLLAMA_BASE_URL` - адрес Ollama внутри Docker-сети;
+- `LLM_MODEL` - имя модели в Ollama;
+- `DATABASE_URL` - строка подключения к PostgreSQL;
+- `MCP_SERVER_URL` - адрес MCP-сервера для API;
+- `MCP_CONNECT_TIMEOUT_SECONDS` - таймаут подключения к MCP;
+- `LOGS_DIRECTORY` - каталог логов внутри контейнера API.
+
+Пример значения уже есть в `.env.example`.
+
+## Подготовка базы данных
+
+MCP-сервер сохраняет результаты в таблицу `synopsis_generations`. Таблица создаётся миграцией Alembic.
+
+Если база `synopsis_agent` ещё не создана, создайте её заранее в PostgreSQL.
+
+Затем примените миграции:
 
 ```bash
-cd /mnt/c/WATA/Internship/synopsis-generator-langgraph
-
-docker compose up -d
+docker compose run --rm mcp alembic upgrade head
 ```
 
-Проверка:
+## Запуск
+
+Поднять сервисы проекта:
 
 ```bash
-docker compose ps
+docker compose up --build
 ```
 
----
+Будут запущены:
 
-## Проверка API
+- API: `http://127.0.0.1:8000`
+- MCP server: `http://127.0.0.1:8001/mcp`
 
-Health check:
-
-```text
-GET /health
-```
-
-Проверка инфраструктурных зависимостей:
-
-```text
-GET /health/dependencies
-```
-
----
-
-## Swagger UI
-
-После запуска приложения документация FastAPI доступна по адресу:
+Swagger UI:
 
 ```text
 http://127.0.0.1:8000/docs
 ```
 
-Через Swagger можно отправлять запросы генератору без использования `curl`.
+## Проверка после старта
 
----
+Проверить, что API поднялся:
 
-## Генерация синопсиса
-
-Endpoint:
-
-```text
-POST /api/v1/synopsis
+```bash
+curl http://127.0.0.1:8000/health
 ```
+
+Проверить зависимости API:
+
+```bash
+curl http://127.0.0.1:8000/health/dependencies
+```
+
+Если всё в порядке, сервис вернёт статус по:
+
+- `ollama`
+- `postgres`
+
+## API
+
+### 1. Запуск новой генерации
+
+`POST /api/v1/synopsis`
 
 Пример запроса:
 
-```json
-{
-  "idea": "Архивист обнаруживает древнюю рукопись, изменения в которой переписывают его собственное прошлое.",
-  "genre": "триллер",
-  "style": "мрачный, атмосферный, кинематографичный",
-  "language": "русский",
-  "length": "короткий синопсис, 3-5 абзацев",
-  "max_revisions": 3
-}
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/synopsis \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "Напиши мрачный психологический триллер на русском на 5 абзацев о программисте, чьи коммиты меняют прошлое",
+    "max_revisions": 3,
+    "max_clarifications": 3
+  }'
 ```
 
-Пример результата:
+Пример ответа при успешной генерации:
 
 ```json
 {
+  "thread_id": "3b4f2c2f-7a30-4d2d-9f2e-1d7744d2f3b5",
+  "interrupted": false,
   "status": "completed",
   "selected_writer": "thriller_writer",
-  "draft": "...",
-  "final_text": "...",
+  "draft": "Черновик...",
+  "final_text": "Финальный синопсис...",
   "critique_passed": true,
-  "critique_score": 8,
+  "critique_score": 9,
   "critique_issues": [],
   "revision_count": 1,
+  "clarification_count": 0,
   "clarification_message": null
 }
 ```
 
----
+Пример ответа, если нужны уточнения:
 
-## Количество узлов и ребер
-
-Граф содержит:
-
-```text
-10 функциональных узлов
+```json
+{
+  "thread_id": "8cf2c3f5-7ec8-40a5-bf6d-5f404e0e9134",
+  "interrupted": true,
+  "status": "needs_clarification",
+  "selected_writer": null,
+  "draft": null,
+  "final_text": null,
+  "critique_passed": null,
+  "critique_score": null,
+  "critique_issues": [],
+  "revision_count": 0,
+  "clarification_count": 1,
+  "clarification_message": "Уточните жанр и желаемый объём."
+}
 ```
 
-С учетом служебных узлов:
+### 2. Продолжение после уточнения
 
-```text
-START
-END
+`POST /api/v1/synopsis/resume`
+
+Используйте `thread_id` из предыдущего ответа.
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/synopsis/resume \
+  -H "Content-Type: application/json" \
+  -d '{
+    "thread_id": "8cf2c3f5-7ec8-40a5-bf6d-5f404e0e9134",
+    "message": "Жанр: триллер, объём: 5 абзацев"
+  }'
 ```
 
-на визуализации отображается:
+## Логи и артефакты
 
-```text
-12 узлов
+- Логи API пишутся в `logs/app.log`.
+- Схема графа хранится в `artifacts/`.
+
+Повторно экспортировать Mermaid и PNG:
+
+```bash
+docker compose exec api python -m app.graph.export_mermaid
 ```
 
-В скомпилированной визуализации графа присутствует:
+## Типовые проблемы
+
+`/health/dependencies` возвращает `503`
+
+Причины:
+
+- не запущен `Ollama`;
+- модель из `LLM_MODEL` не загружена;
+- недоступен `PostgreSQL`;
+- в `DATABASE_URL` указан неверный хост, пользователь, пароль или база.
+
+`api` не видит `mcp`
+
+Проверьте:
+
+- что контейнер `mcp` запущен;
+- что `MCP_SERVER_URL=http://mcp:8001/mcp`;
+- что оба сервиса находятся в сети `wata-infra`.
+
+Ошибка сохранения синопсиса
+
+Проверьте:
+
+- что создана база `synopsis_agent`;
+- что выполнена миграция `alembic upgrade head`;
+- что у пользователя из `DATABASE_URL` есть права на запись.
+
+## Структура репозитория
 
 ```text
-21 направленный переход
+.
+├── artifacts/
+├── mcp_server/
+│   ├── migrations/
+│   └── src/synopsis_mcp/
+├── src/app/
+├── compose.yaml
+├── Dockerfile
+├── requirements.txt
+└── README.md
 ```
-
-В число переходов входят:
-
-- обычные ребра;
-- условная маршрутизация;
-- переходы к специализированным Writer;
-- циклические переходы `Critic → Writer`;
-- переходы к `END`.
