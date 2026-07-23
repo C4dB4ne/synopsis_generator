@@ -21,6 +21,34 @@ if config.config_file_name is not None:
 target_metadata = metadata
 
 
+def include_name(
+    name: str | None,
+    type_: str,
+    parent_names: dict,
+) -> bool:
+    """
+    Ограничивает Alembic только таблицами,
+    которыми управляет приложение.
+
+    Внутренние таблицы LangGraph checkpoint
+    не входят в SQLAlchemy metadata и поэтому
+    не должны участвовать в autogenerate.
+    """
+
+    if type_ == "table":
+        table_key = parent_names.get(
+            "schema_qualified_table_name",
+            name,
+        )
+
+        return (
+            table_key
+            in target_metadata.tables
+        )
+
+    return True
+
+
 def get_database_url() -> str:
     """
     Возвращает DATABASE_URL в формате,
@@ -61,6 +89,7 @@ def run_migrations_offline() -> None:
             "paramstyle": "named",
         },
         compare_type=True,
+        include_name=include_name,
     )
 
     with context.begin_transaction():
@@ -81,6 +110,7 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             compare_type=True,
+            include_name=include_name,
         )
 
         with context.begin_transaction():
