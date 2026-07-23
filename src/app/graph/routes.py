@@ -6,7 +6,7 @@ from app.core.logger import logger
 
 RequirementsRoute = Literal[
     "request_clarification",
-    "genre_router",
+    "ensure_story_project",
     "clarification_limit_reached",
 ]
 
@@ -45,7 +45,7 @@ def route_after_requirements(
         "requirements_complete",
         False,
     ):
-        route = "genre_router"
+        route = "ensure_story_project"
 
     else:
         clarification_count = state.get(

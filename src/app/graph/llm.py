@@ -62,3 +62,16 @@ def create_editor_llm() -> ChatOllama:
         temperature=0.0,
         reasoning=False,
     )
+
+
+def create_memory_llm() -> ChatOllama:
+    """
+    Модель для обновления долговременной
+    структурированной памяти истории
+    """
+    return ChatOllama(
+        model=settings.llm_model,
+        base_url=settings.ollama_base_url,
+        temperature=0.0,
+        reasoning=False,
+    )

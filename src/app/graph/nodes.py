@@ -1,3 +1,5 @@
+import json
+
 from langgraph.types import interrupt
 
 from app.graph.state import SynopsisState
@@ -8,34 +10,24 @@ from app.graph.llm import (
     create_writer_llm,
     create_critic_llm,
     create_editor_llm,
+    create_memory_llm
 )
 from app.graph.prompts import (
     REQUIREMENTS_ANALYSIS_PROMPT,
     CLARIFICATION_REQUEST_PROMPT,
+    MEMORY_UPDATE_PROMPT
 )
 from app.graph.schemas import (
     ClarificationRequest,
     RequirementField,
     RequirementsAnalysis,
     CritiqueResult,
+    StoryMemory
 )
-
-
-requirements_analyzer = (
-    create_requirements_llm()
-    .with_structured_output(
-        RequirementsAnalysis,
-        method="json_schema",
-    )
-)
-
-
-clarification_generator = (
-    create_clarification_llm()
-    .with_structured_output(
-        ClarificationRequest,
-        method="json_schema",
-    )
+from app.mcp.client import (
+    find_mcp_tool,
+    get_mcp_tools_safely,
+    parse_mcp_tool_result,
 )
 
 
@@ -63,14 +55,338 @@ FIELD_LABELS: dict[
 }
 
 
+requirements_analyzer = (
+    create_requirements_llm()
+    .with_structured_output(
+        RequirementsAnalysis,
+        method="json_schema",
+    )
+)
+
+clarification_generator = (
+    create_clarification_llm()
+    .with_structured_output(
+        ClarificationRequest,
+        method="json_schema",
+    )
+)
+
 writer_llm = create_writer_llm()
 critic_llm = create_critic_llm()
+
+memory_llm = (
+    create_memory_llm()
+    .with_structured_output(
+        StoryMemory,
+        method="json_schema",
+    )
+)
+
 editor_llm = create_editor_llm()
 
 
 structured_critique_llm = critic_llm.with_structured_output(
     CritiqueResult
 )
+
+
+async def load_story_context(
+    state: SynopsisState,
+):
+    """
+    Загружает долговременную память существующей истории.
+
+    При отсутствии story_id ничего не загружает:
+    новый story project будет создан после сбора требований.
+    """
+
+    story_id = state.get("story_id")
+    if not story_id:
+        logger.info(
+            "STORY MEMORY | new story requested"
+        )
+
+        return {
+            "story_memory": {},
+            "story_memory_version": 0,
+            "story_context_loaded": False,
+            "status": "story_context_empty",
+        }
+
+    tools = await get_mcp_tools_safely()
+
+    get_context_tool = find_mcp_tool(
+        tools,
+        "get_story_context",
+    )
+
+    if get_context_tool is None:
+        logger.warning(
+            (
+                "STORY MEMORY | "
+                "get_story_context unavailable | "
+                "story_id=%s"
+            ),
+            story_id,
+        )
+
+        return {
+            "story_memory": {},
+            "story_memory_version": 0,
+            "story_context_loaded": False,
+            "status": "story_context_unavailable",
+        }
+
+    try:
+        raw_result = await get_context_tool.ainvoke(
+            {
+                "story_id": story_id,
+            }
+        )
+
+        context = parse_mcp_tool_result(raw_result)
+
+        if not context.get(
+            "found",
+            False,
+        ):
+            error = context.get("error")
+
+            if error:
+                logger.warning(
+                    (
+                        "STORY MEMORY | "
+                        "load failed | "
+                        "story_id=%s | error=%s"
+                    ),
+                    story_id,
+                    error,
+                )
+
+                return {
+                    "story_memory": {},
+                    "story_context_loaded": False,
+                    "status": "story_context_unavailable",
+                }
+
+            raise ValueError(
+                f"Story {story_id} was not found."
+            )
+
+        logger.info(
+            (
+                "STORY MEMORY LOADED | "
+                "story_id=%s | version=%s"
+            ),
+            story_id,
+            context.get(
+                "memory_version",
+                0,
+            ),
+        )
+
+        return {
+            "story_title": (
+                context.get("title") or ""
+            ),
+
+            "story_memory": (
+                context.get("memory") or {}
+            ),
+
+            "story_memory_version": (
+                context.get(
+                    "memory_version",
+                    0,
+                )
+            ),
+
+            "story_context_loaded": True,
+
+            "idea": (
+                context.get("premise")
+                or state.get("idea", "")
+            ),
+
+            "genre": (
+                context.get("genre")
+                or state.get("genre", "")
+            ),
+
+            "style": (
+                context.get("style")
+                or state.get("style", "")
+            ),
+
+            "language": (
+                context.get("language")
+                or state.get(
+                    "language",
+                    "",
+                )
+            ),
+
+            "status": "story_context_loaded",
+        }
+
+    except ValueError:
+        raise
+
+    except Exception as exc:
+        logger.warning(
+            (
+                "STORY MEMORY | "
+                "unexpected load error | "
+                "story_id=%s | error=%s"
+            ),
+            story_id,
+            exc,
+        )
+
+        return {
+            "story_memory": {},
+            "story_context_loaded": False,
+            "status": "story_context_unavailable",
+        }
+
+
+def _build_story_title(
+    idea: str,
+) -> str:
+    """
+    Создает техническое название истории
+    без дополнительного LLM-вызова
+    """
+
+    cleaned = " ".join(
+        idea.split()
+    )
+
+    if len(cleaned) <= 100:
+        return cleaned
+
+    return (
+        cleaned[:97].rstrip()
+        + "..."
+    )
+
+
+async def ensure_story_project(
+    state: SynopsisState,
+):
+    """
+    Создает story project для новой истории.
+
+    Для существующего story_id ничего не создает.
+    """
+
+    story_id = state.get("story_id")
+
+    if story_id:
+        return {
+            "status": "story_project_ready",
+        }
+
+    tools = await get_mcp_tools_safely()
+
+    create_tool = find_mcp_tool(
+        tools,
+        "create_story",
+    )
+
+    if create_tool is None:
+        logger.warning(
+            "STORY MEMORY | create_story unavailable"
+        )
+
+        return {
+            "status": "story_project_unavailable",
+        }
+
+    title = _build_story_title(
+        state.get(
+            "idea",
+            "Без названия",
+        )
+    )
+
+    try:
+        raw_result = await create_tool.ainvoke(
+            {
+                "title": title,
+                "premise": state.get(
+                    "idea",
+                    "",
+                ),
+                "genre": state.get(
+                    "genre",
+                    "",
+                ),
+                "style": state.get(
+                    "style",
+                    "",
+                ),
+                "language": state.get(
+                    "language",
+                    "",
+                ),
+            }
+        )
+
+        result = parse_mcp_tool_result(
+            raw_result
+        )
+
+        if not result.get(
+            "created",
+            False,
+        ):
+            logger.warning(
+                (
+                    "STORY MEMORY | "
+                    "create_story failed | error=%s"
+                ),
+                result.get("error"),
+            )
+
+            return {
+                "status": "story_project_unavailable",
+            }
+
+        story_id = result.get(
+            "story_id"
+        )
+
+        logger.info(
+            (
+                "STORY CREATED | "
+                "story_id=%s | title=%r"
+            ),
+            story_id,
+            title,
+        )
+
+        return {
+            "story_id": story_id,
+            "story_title": title,
+            "story_memory": {},
+            "story_memory_version": 0,
+            "story_context_loaded": True,
+            "status": "story_project_ready",
+        }
+
+    except Exception as exc:
+        logger.warning(
+            (
+                "STORY MEMORY | "
+                "create_story error | %s"
+            ),
+            exc,
+        )
+
+        return {
+            "status": "story_project_unavailable",
+        }
 
 
 def collect_requirements(state: SynopsisState):
@@ -189,7 +505,8 @@ def collect_requirements(state: SynopsisState):
         logger.info(
             (
                 "Requirements analyzed | "
-                "complete=%s | "
+                "llm_complete=%s | "
+                "resolved_complete=%s | "
                 "genre=%r | "
                 "style=%r | "
                 "language=%r | "
@@ -742,6 +1059,21 @@ def _run_writer(
 Верни только готовый текст.
 """.strip()
 
+    story_memory = state.get(
+        "story_memory",
+        {},
+    )
+
+    memory_context = (
+        json.dumps(
+            story_memory,
+            ensure_ascii=False,
+            indent=2,
+        )
+        if story_memory
+        else "Предыдущей памяти нет."
+    )
+
     base_request = f"""
 ИСХОДНОЕ ТЕХНИЧЕСКОЕ ЗАДАНИЕ
 
@@ -779,6 +1111,16 @@ def _run_writer(
 но сохрани сильные стороны текста и исходное техническое задание.
 
 Верни только новую полную версию текста.
+
+ДОЛГОВРЕМЕННЫЙ КОНТЕКСТ ПРОИЗВЕДЕНИЯ
+
+{memory_context}
+
+Используй этот контекст для сохранения
+последовательности событий, персонажей и правил мира.
+
+Новый явный запрос пользователя имеет приоритет,
+если он сознательно изменяет предыдущие факты.
 """.strip()
 
     else:
@@ -881,6 +1223,15 @@ def critic(state: SynopsisState):
     Предыдущие версии и предыдущие оценки не передаются
     модели.
     """
+    story_memory = json.dumps(
+        state.get(
+            "story_memory",
+            {},
+        ),
+        ensure_ascii=False,
+        indent=2,
+    )
+
     prompt = f"""
 Ты строгий профессиональный сценарный критик.
 
@@ -936,6 +1287,14 @@ def critic(state: SynopsisState):
 
 Если требуется переработка,
 дай конкретные инструкции писателю.
+
+КОНТЕКСТ ПРЕДЫДУЩИХ ЧАСТЕЙ
+
+{story_memory}
+
+При оценке проверь,
+что новая версия не противоречит установленным
+фактам истории без явного указания пользователя.
 """.strip()
 
     result = structured_critique_llm.invoke(prompt)
@@ -1029,4 +1388,355 @@ def language_editor(state: SynopsisState):
             if state.get("critique_passed", False)
             else "completed_with_warnings"
         ),
+    }
+
+
+def memory_manager(
+    state: SynopsisState,
+):
+    """
+    Обновляет компактную долговременную память
+    после получения финального текста.
+    """
+
+    final_text = state.get(
+        "final_text",
+        "",
+    )
+
+    if not final_text:
+        return {
+            "story_memory_ready": False,
+            "status": "memory_skipped",
+        }
+
+    previous_memory = state.get(
+        "story_memory",
+        {},
+    )
+
+    try:
+        messages = (
+            MEMORY_UPDATE_PROMPT
+            .format_messages(
+                story_title=state.get(
+                    "story_title",
+                    "",
+                ),
+                premise=state.get(
+                    "idea",
+                    "",
+                ),
+                genre=state.get(
+                    "genre",
+                    "",
+                ),
+                style=state.get(
+                    "style",
+                    "",
+                ),
+                language=state.get(
+                    "language",
+                    "",
+                ),
+                previous_memory=json.dumps(
+                    previous_memory,
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                user_request=state.get(
+                    "latest_user_message",
+                    "",
+                ),
+                final_text=final_text,
+            )
+        )
+
+        memory = memory_llm.invoke(
+            messages
+        )
+
+        if not isinstance(
+            memory,
+            StoryMemory,
+        ):
+            raise TypeError(
+                "Memory manager returned "
+                "unexpected result type."
+            )
+
+        memory_payload = (
+            memory.model_dump()
+        )
+
+        logger.info(
+            (
+                "STORY MEMORY COMPACTED | "
+                "story_id=%s | "
+                "characters=%d | "
+                "facts=%d | "
+                "threads=%d"
+            ),
+            state.get("story_id"),
+            len(memory.characters),
+            len(memory.world_facts),
+            len(memory.unresolved_threads),
+        )
+
+        return {
+            "story_memory": memory_payload,
+            "story_memory_ready": True,
+            "status": "memory_ready",
+        }
+
+    except Exception as exc:
+        # Очень важно:
+        # не портим существующую memory
+        # при неудаче LLM.
+        logger.warning(
+            (
+                "STORY MEMORY COMPACTION FAILED | "
+                "story_id=%s | error=%s"
+            ),
+            state.get("story_id"),
+            exc,
+        )
+
+        return {
+            "story_memory_ready": False,
+            "status": "memory_failed",
+        }
+
+
+async def persist_story(
+    state: SynopsisState,
+):
+    """
+    Сохраняет generation и затем новую версию
+    долговременной памяти через MCP.
+    """
+
+    final_status = (
+        "completed"
+        if state.get(
+            "critique_passed",
+            False,
+        )
+        else "completed_with_warnings"
+    )
+
+    tools = await get_mcp_tools_safely()
+
+    if not tools:
+        return {
+            "story_memory_saved": False,
+            "status": final_status,
+        }
+
+    save_synopsis_tool = find_mcp_tool(
+        tools,
+        "save_synopsis",
+    )
+
+    save_memory_tool = find_mcp_tool(
+        tools,
+        "save_story_memory",
+    )
+
+    synopsis_id = None
+
+    # 1. Сохраняем generation.
+    if save_synopsis_tool is not None:
+        try:
+            memory = state.get(
+                "story_memory",
+                {},
+            )
+
+            raw_result = (
+                await save_synopsis_tool.ainvoke(
+                    {
+                        "story_id": state.get(
+                            "story_id",
+                        ),
+                        "thread_id": state.get(
+                            "thread_id",
+                        ),
+                        "user_request": state.get(
+                            "original_user_request",
+                            state.get(
+                                "latest_user_message",
+                                "",
+                            ),
+                        ),
+                        "entry_summary": (
+                            memory.get(
+                                "summary"
+                            )
+                            if memory
+                            else None
+                        ),
+                        "idea": state.get(
+                            "idea",
+                            "",
+                        ),
+                        "genre": state.get(
+                            "genre",
+                            "",
+                        ),
+                        "style": state.get(
+                            "style",
+                            "",
+                        ),
+                        "language": state.get(
+                            "language",
+                            "",
+                        ),
+                        "requested_length": (
+                            state.get(
+                                "length",
+                                "",
+                            )
+                        ),
+                        "selected_writer": (
+                            state.get(
+                                "selected_writer",
+                            )
+                        ),
+                        "draft": state.get(
+                            "draft",
+                        ),
+                        "final_text": state.get(
+                            "final_text",
+                            "",
+                        ),
+                        "critique_passed": (
+                            state.get(
+                                "critique_passed",
+                            )
+                        ),
+                        "critique_score": (
+                            state.get(
+                                "critique_score",
+                            )
+                        ),
+                        "revision_count": (
+                            state.get(
+                                "revision_count",
+                                0,
+                            )
+                        ),
+                    }
+                )
+            )
+
+            save_result = (
+                parse_mcp_tool_result(
+                    raw_result
+                )
+            )
+
+            if save_result.get(
+                "saved",
+                False,
+            ):
+                synopsis_id = (
+                    save_result.get(
+                        "synopsis_id"
+                    )
+                )
+
+                logger.info(
+                    (
+                        "SYNOPSIS PERSISTED | "
+                        "synopsis_id=%s | "
+                        "story_id=%s"
+                    ),
+                    synopsis_id,
+                    state.get("story_id"),
+                )
+
+        except Exception as exc:
+            logger.warning(
+                "save_synopsis failed: %s",
+                exc,
+            )
+
+    # 2. Сохраняем memory.
+    story_id = state.get(
+        "story_id"
+    )
+
+    memory_ready = state.get(
+        "story_memory_ready",
+        False,
+    )
+
+    if (
+        story_id
+        and memory_ready
+        and save_memory_tool is not None
+    ):
+        try:
+            raw_result = (
+                await save_memory_tool.ainvoke(
+                    {
+                        "story_id": story_id,
+                        "memory": state.get(
+                            "story_memory",
+                            {},
+                        ),
+                        "source_generation_id": (
+                            synopsis_id
+                        ),
+                    }
+                )
+            )
+
+            save_memory_result = (
+                parse_mcp_tool_result(
+                    raw_result
+                )
+            )
+
+            if save_memory_result.get(
+                "saved",
+                False,
+            ):
+                version = (
+                    save_memory_result.get(
+                        "memory_version",
+                        state.get(
+                            "story_memory_version",
+                            0,
+                        ),
+                    )
+                )
+
+                logger.info(
+                    (
+                        "STORY MEMORY SAVED | "
+                        "story_id=%s | version=%s"
+                    ),
+                    story_id,
+                    version,
+                )
+
+                return {
+                    "synopsis_id": synopsis_id,
+                    "story_memory_saved": True,
+                    "story_memory_version": version,
+                    "status": final_status,
+                }
+
+        except Exception as exc:
+            logger.warning(
+                "save_story_memory failed: %s",
+                exc,
+            )
+
+    return {
+        "synopsis_id": synopsis_id,
+        "story_memory_saved": False,
+        "status": final_status,
     }

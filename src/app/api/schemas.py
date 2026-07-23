@@ -3,6 +3,15 @@ from pydantic import BaseModel, Field
 
 class SynopsisRequest(BaseModel):
 
+    story_id: int | None = Field(
+        default=None,
+        ge=1,
+        description=(
+            "ID существующей истории. "
+            "Не передавать для новой истории."
+        ),
+    )
+
     message: str = Field(
         min_length=1,
         description=(
@@ -51,6 +60,13 @@ class SynopsisResumeRequest(BaseModel):
 
 
 class SynopsisResponse(BaseModel):
+
+    story_id: int | None = None
+    synopsis_id: int | None = None
+
+    story_memory_version: int = 0
+    story_memory_saved: bool = False
+
     thread_id: str
     interrupted: bool = False
 

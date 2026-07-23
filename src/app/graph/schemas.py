@@ -131,3 +131,51 @@ class CritiqueResult(BaseModel):
             "версии для писателя."
         ),
     )
+
+
+class CharacterMemory(BaseModel):
+    """Компактная информация о персонаже."""
+
+    name: str
+    role: str = ""
+    current_state: str = ""
+
+    goals: list[str] = Field(
+        default_factory=list,
+    )
+
+
+class StoryMemory(BaseModel):
+    """
+    Канонический компактный snapshot произведения.
+
+    Хранится между разными LangGraph threads
+    """
+
+    summary: str
+
+    characters: list[
+        CharacterMemory
+    ] = Field(
+        default_factory=list,
+    )
+
+    world_facts: list[str] = Field(
+        default_factory=list,
+    )
+
+    locations: list[str] = Field(
+        default_factory=list,
+    )
+
+    unresolved_threads: list[str] = Field(
+        default_factory=list,
+    )
+
+    latest_events: list[str] = Field(
+        default_factory=list,
+    )
+
+    style_rules: list[str] = Field(
+        default_factory=list,
+    )

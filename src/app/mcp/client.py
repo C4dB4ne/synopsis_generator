@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import json
+from typing import Any
 
 from langchain_core.tools import BaseTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -78,3 +80,43 @@ def find_mcp_tool(
             return tool
 
     return None
+
+
+def parse_mcp_tool_result(result: Any):
+    """
+    Извлекает JSON payload из результата MCP tool
+
+    Поддерживает обычный dict, JSON-строку
+    и список text-content blocks
+    """
+    if isinstance(result, dict):
+        text = result.get("text")
+
+        if isinstance(text, str):
+            return json.loads(text)
+
+        return result
+
+    if isinstance(result, str):
+        return json.loads(result)
+
+    if isinstance(result, list):
+        for item in result:
+            if isinstance(item, dict):
+                text = item.get("text")
+
+                if isinstance(text, str):
+                    return json.loads(text)
+
+            text = getattr(
+                item,
+                "text",
+                None,
+            )
+
+            if isinstance(text, str):
+                return json.loads(text)
+
+    raise ValueError(
+        "Unsupported MCP tool result format."
+    )

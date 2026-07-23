@@ -19,6 +19,10 @@ from app.graph.nodes import (
     clarification_limit_reached,
     thriller_writer,
     universal_writer,
+    load_story_context,
+    ensure_story_project,
+    memory_manager,
+    persist_story,
 )
 from app.core.logger import log_graph_node
 
@@ -30,6 +34,38 @@ def build_graph(checkpointer=None):
     builder = StateGraph(SynopsisState)
 
     # УЗЛЫ
+    builder.add_node(
+        "load_story_context",
+        log_graph_node(
+            "load_story_context",
+            load_story_context,
+        ),
+    )
+
+    builder.add_node(
+        "ensure_story_project",
+        log_graph_node(
+            "ensure_story_project",
+            ensure_story_project,
+        ),
+    )
+
+    builder.add_node(
+        "memory_manager",
+        log_graph_node(
+            "memory_manager",
+            memory_manager,
+        ),
+    )
+
+    builder.add_node(
+        "persist_story",
+        log_graph_node(
+            "persist_story",
+            persist_story,
+        ),
+    )
+
     builder.add_node(
         "collect_requirements",
         log_graph_node(
@@ -120,10 +156,21 @@ def build_graph(checkpointer=None):
         ),
     )
 
-    # ТОЧКА ВХОДА
+    # МАРШРУТЫ
+
     builder.add_edge(
         START,
+        "load_story_context",
+    )
+
+    builder.add_edge(
+        "load_story_context",
         "collect_requirements",
+    )
+
+    builder.add_edge(
+        "ensure_story_project",
+        "genre_router",
     )
 
     # МАРШРУТИЗАЦИЯ ТРЕБОВАНИЙ - ПРОСТЕНЬКОЕ УСЛОВНОЕ РЕБРО
@@ -172,11 +219,20 @@ def build_graph(checkpointer=None):
         route_after_critic,
     )
 
-    # ФИНАЛЬНЫЙ ШАГ - К РЕДАКТОРУ
+    # ФИНАЛЬНЫЙ ШАГ - К РЕДАКТОРУ + Сохранение
     builder.add_edge(
         "language_editor",
+        "memory_manager",
+    )
+
+    builder.add_edge(
+        "memory_manager",
+        "persist_story",
+    )
+
+    builder.add_edge(
+        "persist_story",
         END,
     )
 
     return builder.compile(checkpointer=checkpointer)
-

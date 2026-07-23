@@ -1,0 +1,129 @@
+2026-07-23 13:46:01 | INFO | synopsis-generator | File logging enabled: /app/logs/app.log
+2026-07-23 13:46:02 | INFO | synopsis-generator | Starting application: Synopsis Generator
+2026-07-23 13:46:02 | INFO | synopsis-generator | Initializing LangGraph PostgreSQL checkpointer.
+2026-07-23 13:46:02 | INFO | synopsis-generator | LangGraph checkpointer ready.
+2026-07-23 13:54:34 | INFO | synopsis-generator | GRAPH START | thread_id=f950a43e-b183-44b2-8ec1-687534128765
+2026-07-23 13:54:34 | INFO | synopsis-generator | GRAPH NODE START | load_story_context | status=started
+2026-07-23 13:54:34 | INFO | synopsis-generator | STORY MEMORY | new story requested
+2026-07-23 13:54:34 | INFO | synopsis-generator | GRAPH NODE END | load_story_context | duration_ms=1.14 | new_status=story_context_empty
+2026-07-23 13:54:34 | INFO | synopsis-generator | GRAPH NODE START | collect_requirements | status=story_context_empty
+2026-07-23 13:54:46 | INFO | synopsis-generator | GRAPH NODE END | collect_requirements | duration_ms=11467.86 | new_status=requirements_complete
+2026-07-23 13:54:46 | INFO | synopsis-generator | GRAPH ROUTE | collect_requirements -> ensure_story_project
+2026-07-23 13:54:46 | INFO | synopsis-generator | GRAPH NODE START | ensure_story_project | status=requirements_complete
+2026-07-23 13:54:46 | INFO | synopsis-generator | STORY CREATED | story_id=2 | title='Детектив расследует дело о серийном убийце'
+2026-07-23 13:54:46 | INFO | synopsis-generator | GRAPH NODE END | ensure_story_project | duration_ms=246.90 | new_status=story_project_ready
+2026-07-23 13:54:46 | INFO | synopsis-generator | Genre routing | genre='психологический триллер' | writer=thriller_writer
+2026-07-23 13:54:46 | INFO | synopsis-generator | GRAPH NODE START | thriller_writer | status=writer_selected
+2026-07-23 13:55:01 | INFO | synopsis-generator | Writer execution | writer=триллер: напряжение, опасность, неопределенность и повышение ставок | revision=False | revision_count=0
+2026-07-23 13:55:01 | INFO | synopsis-generator | GRAPH NODE END | thriller_writer | duration_ms=14077.94 | new_status=draft_generated
+2026-07-23 13:55:01 | INFO | synopsis-generator | GRAPH NODE START | critic | status=draft_generated
+2026-07-23 13:55:03 | INFO | synopsis-generator | Critic result | score=8 | passed=True | issues=0 | revision=0/3
+2026-07-23 13:55:03 | INFO | synopsis-generator | GRAPH NODE END | critic | duration_ms=2759.67 | new_status=critique_passed
+2026-07-23 13:55:03 | INFO | synopsis-generator | GRAPH ROUTE | critic | passed=True | revision=0/3 | next=language_editor
+2026-07-23 13:55:03 | INFO | synopsis-generator | GRAPH NODE START | language_editor | status=critique_passed
+2026-07-23 13:55:19 | INFO | synopsis-generator | GRAPH NODE END | language_editor | duration_ms=14375.96 | new_status=completed
+2026-07-23 13:55:19 | INFO | synopsis-generator | GRAPH NODE START | memory_manager | status=completed
+2026-07-23 13:55:19 | WARNING | synopsis-generator | STORY MEMORY COMPACTION FAILED | story_id=2 | error={"error":{"code":400,"message":"Failed to initialize samplers: failed to parse grammar","type":"invalid_request_error"}} (status code: 400)
+2026-07-23 13:55:19 | INFO | synopsis-generator | GRAPH NODE END | memory_manager | duration_ms=273.00 | new_status=memory_failed
+2026-07-23 13:55:19 | INFO | synopsis-generator | GRAPH NODE START | persist_story | status=memory_failed
+2026-07-23 13:55:19 | INFO | synopsis-generator | SYNOPSIS PERSISTED | synopsis_id=17 | story_id=2
+2026-07-23 13:55:19 | INFO | synopsis-generator | GRAPH NODE END | persist_story | duration_ms=78.00 | new_status=completed
+2026-07-23 13:55:19 | INFO | synopsis-generator | GRAPH FINISHED | thread_id=f950a43e-b183-44b2-8ec1-687534128765 | status=completed
+2026-07-23 14:08:33 | INFO | synopsis-generator | Stopping application: Synopsis Generator
+2026-07-23 14:08:35 | INFO | synopsis-generator | File logging enabled: /app/logs/app.log
+2026-07-23 14:08:35 | INFO | synopsis-generator | Starting application: Synopsis Generator
+2026-07-23 14:08:35 | INFO | synopsis-generator | Initializing LangGraph PostgreSQL checkpointer.
+2026-07-23 14:08:35 | INFO | synopsis-generator | LangGraph checkpointer ready.
+2026-07-23 14:08:45 | INFO | synopsis-generator | Stopping application: Synopsis Generator
+2026-07-23 14:08:47 | INFO | synopsis-generator | File logging enabled: /app/logs/app.log
+2026-07-23 14:08:47 | INFO | synopsis-generator | Starting application: Synopsis Generator
+2026-07-23 14:08:47 | INFO | synopsis-generator | Initializing LangGraph PostgreSQL checkpointer.
+2026-07-23 14:08:47 | INFO | synopsis-generator | LangGraph checkpointer ready.
+2026-07-23 14:09:13 | INFO | synopsis-generator | Stopping application: Synopsis Generator
+2026-07-23 14:09:14 | INFO | synopsis-generator | File logging enabled: /app/logs/app.log
+2026-07-23 14:09:15 | INFO | synopsis-generator | Starting application: Synopsis Generator
+2026-07-23 14:09:15 | INFO | synopsis-generator | Initializing LangGraph PostgreSQL checkpointer.
+2026-07-23 14:09:15 | INFO | synopsis-generator | LangGraph checkpointer ready.
+2026-07-23 14:09:32 | INFO | synopsis-generator | Stopping application: Synopsis Generator
+2026-07-23 14:09:34 | INFO | synopsis-generator | File logging enabled: /app/logs/app.log
+2026-07-23 14:09:35 | INFO | synopsis-generator | Starting application: Synopsis Generator
+2026-07-23 14:09:35 | INFO | synopsis-generator | Initializing LangGraph PostgreSQL checkpointer.
+2026-07-23 14:09:35 | INFO | synopsis-generator | LangGraph checkpointer ready.
+2026-07-23 14:09:43 | INFO | synopsis-generator | File logging enabled: /app/logs/app.log
+2026-07-23 14:13:37 | INFO | synopsis-generator | Stopping application: Synopsis Generator
+2026-07-23 14:13:39 | INFO | synopsis-generator | File logging enabled: /app/logs/app.log
+2026-07-23 14:13:40 | INFO | synopsis-generator | Starting application: Synopsis Generator
+2026-07-23 14:13:40 | INFO | synopsis-generator | Initializing LangGraph PostgreSQL checkpointer.
+2026-07-23 14:13:40 | INFO | synopsis-generator | LangGraph checkpointer ready.
+2026-07-23 14:13:40 | INFO | synopsis-generator | Stopping application: Synopsis Generator
+2026-07-23 14:13:41 | INFO | synopsis-generator | File logging enabled: /app/logs/app.log
+2026-07-23 14:13:42 | INFO | synopsis-generator | Starting application: Synopsis Generator
+2026-07-23 14:13:42 | INFO | synopsis-generator | Initializing LangGraph PostgreSQL checkpointer.
+2026-07-23 14:13:42 | INFO | synopsis-generator | LangGraph checkpointer ready.
+2026-07-23 14:13:46 | INFO | synopsis-generator | Stopping application: Synopsis Generator
+2026-07-23 14:13:49 | INFO | synopsis-generator | File logging enabled: /app/logs/app.log
+2026-07-23 14:13:49 | INFO | synopsis-generator | Starting application: Synopsis Generator
+2026-07-23 14:13:49 | INFO | synopsis-generator | Initializing LangGraph PostgreSQL checkpointer.
+2026-07-23 14:13:49 | INFO | synopsis-generator | LangGraph checkpointer ready.
+2026-07-23 14:14:41 | INFO | synopsis-generator | Stopping application: Synopsis Generator
+2026-07-23 14:14:44 | INFO | synopsis-generator | File logging enabled: /app/logs/app.log
+2026-07-23 14:14:45 | INFO | synopsis-generator | Starting application: Synopsis Generator
+2026-07-23 14:14:45 | INFO | synopsis-generator | Initializing LangGraph PostgreSQL checkpointer.
+2026-07-23 14:14:45 | INFO | synopsis-generator | LangGraph checkpointer ready.
+2026-07-23 14:14:54 | INFO | synopsis-generator | GRAPH START | thread_id=4bef365e-81c8-493e-a667-3c69828ad853
+2026-07-23 14:14:54 | INFO | synopsis-generator | GRAPH NODE START | load_story_context | status=started
+2026-07-23 14:14:54 | INFO | synopsis-generator | STORY MEMORY | new story requested
+2026-07-23 14:14:54 | INFO | synopsis-generator | GRAPH NODE END | load_story_context | duration_ms=1.10 | new_status=story_context_empty
+2026-07-23 14:14:54 | INFO | synopsis-generator | GRAPH NODE START | collect_requirements | status=story_context_empty
+2026-07-23 14:14:57 | INFO | synopsis-generator | Requirements analyzed | llm_complete=True | resolved_complete=True | genre='психологический триллер' | style='мрачный' | language='русский' | length='5 абзацев' | missing=[] | ambiguous=[]
+2026-07-23 14:14:57 | INFO | synopsis-generator | GRAPH NODE END | collect_requirements | duration_ms=3334.21 | new_status=requirements_complete
+2026-07-23 14:14:57 | INFO | synopsis-generator | GRAPH ROUTE | collect_requirements -> ensure_story_project
+2026-07-23 14:14:57 | INFO | synopsis-generator | GRAPH NODE START | ensure_story_project | status=requirements_complete
+2026-07-23 14:14:57 | INFO | synopsis-generator | STORY CREATED | story_id=3 | title='Детектив расследует загадочное исчезновение жителей маленького города'
+2026-07-23 14:14:57 | INFO | synopsis-generator | GRAPH NODE END | ensure_story_project | duration_ms=110.39 | new_status=story_project_ready
+2026-07-23 14:14:58 | INFO | synopsis-generator | Genre routing | genre='психологический триллер' | writer=thriller_writer
+2026-07-23 14:14:58 | INFO | synopsis-generator | GRAPH NODE START | thriller_writer | status=writer_selected
+2026-07-23 14:15:09 | INFO | synopsis-generator | Writer execution | writer=триллер: напряжение, опасность, неопределенность и повышение ставок | revision=False | revision_count=0
+2026-07-23 14:15:09 | INFO | synopsis-generator | GRAPH NODE END | thriller_writer | duration_ms=11054.13 | new_status=draft_generated
+2026-07-23 14:15:09 | INFO | synopsis-generator | GRAPH NODE START | critic | status=draft_generated
+2026-07-23 14:15:11 | INFO | synopsis-generator | Critic result | score=8 | passed=True | issues=0 | revision=0/3
+2026-07-23 14:15:11 | INFO | synopsis-generator | GRAPH NODE END | critic | duration_ms=2729.74 | new_status=critique_passed
+2026-07-23 14:15:11 | INFO | synopsis-generator | GRAPH ROUTE | critic | passed=True | revision=0/3 | next=language_editor
+2026-07-23 14:15:11 | INFO | synopsis-generator | GRAPH NODE START | language_editor | status=critique_passed
+2026-07-23 14:15:24 | INFO | synopsis-generator | GRAPH NODE END | language_editor | duration_ms=11321.09 | new_status=completed
+2026-07-23 14:15:24 | INFO | synopsis-generator | GRAPH NODE START | memory_manager | status=completed
+2026-07-23 14:15:40 | INFO | synopsis-generator | STORY MEMORY COMPACTED | story_id=3 | characters=2 | facts=5 | threads=4
+2026-07-23 14:15:40 | INFO | synopsis-generator | GRAPH NODE END | memory_manager | duration_ms=16158.11 | new_status=memory_ready
+2026-07-23 14:15:40 | INFO | synopsis-generator | GRAPH NODE START | persist_story | status=memory_ready
+2026-07-23 14:15:40 | INFO | synopsis-generator | SYNOPSIS PERSISTED | synopsis_id=18 | story_id=3
+2026-07-23 14:15:40 | INFO | synopsis-generator | STORY MEMORY SAVED | story_id=3 | version=1
+2026-07-23 14:15:40 | INFO | synopsis-generator | GRAPH NODE END | persist_story | duration_ms=119.68 | new_status=completed
+2026-07-23 14:15:40 | INFO | synopsis-generator | GRAPH FINISHED | thread_id=4bef365e-81c8-493e-a667-3c69828ad853 | status=completed
+2026-07-23 14:20:03 | INFO | synopsis-generator | GRAPH START | thread_id=415822a8-5f65-4b4c-a93b-f56a1d0bcc18
+2026-07-23 14:20:03 | INFO | synopsis-generator | GRAPH NODE START | load_story_context | status=started
+2026-07-23 14:20:03 | INFO | synopsis-generator | STORY MEMORY LOADED | story_id=3 | version=1
+2026-07-23 14:20:03 | INFO | synopsis-generator | GRAPH NODE END | load_story_context | duration_ms=70.39 | new_status=story_context_loaded
+2026-07-23 14:20:03 | INFO | synopsis-generator | GRAPH NODE START | collect_requirements | status=story_context_loaded
+2026-07-23 14:20:05 | INFO | synopsis-generator | Requirements analyzed | llm_complete=True | resolved_complete=True | genre='психологический триллер' | style='мрачный' | language='русский' | length='5 абзацев' | missing=[] | ambiguous=[]
+2026-07-23 14:20:05 | INFO | synopsis-generator | GRAPH NODE END | collect_requirements | duration_ms=2431.90 | new_status=requirements_complete
+2026-07-23 14:20:05 | INFO | synopsis-generator | GRAPH ROUTE | collect_requirements -> ensure_story_project
+2026-07-23 14:20:05 | INFO | synopsis-generator | GRAPH NODE START | ensure_story_project | status=requirements_complete
+2026-07-23 14:20:05 | INFO | synopsis-generator | GRAPH NODE END | ensure_story_project | duration_ms=0.57 | new_status=story_project_ready
+2026-07-23 14:20:05 | INFO | synopsis-generator | Genre routing | genre='психологический триллер' | writer=thriller_writer
+2026-07-23 14:20:05 | INFO | synopsis-generator | GRAPH NODE START | thriller_writer | status=writer_selected
+2026-07-23 14:20:17 | INFO | synopsis-generator | Writer execution | writer=триллер: напряжение, опасность, неопределенность и повышение ставок | revision=False | revision_count=0
+2026-07-23 14:20:17 | INFO | synopsis-generator | GRAPH NODE END | thriller_writer | duration_ms=12293.27 | new_status=draft_generated
+2026-07-23 14:20:17 | INFO | synopsis-generator | GRAPH NODE START | critic | status=draft_generated
+2026-07-23 14:20:22 | INFO | synopsis-generator | Critic result | score=8 | passed=True | issues=0 | revision=0/3
+2026-07-23 14:20:22 | INFO | synopsis-generator | GRAPH NODE END | critic | duration_ms=4725.53 | new_status=critique_passed
+2026-07-23 14:20:22 | INFO | synopsis-generator | GRAPH ROUTE | critic | passed=True | revision=0/3 | next=language_editor
+2026-07-23 14:20:22 | INFO | synopsis-generator | GRAPH NODE START | language_editor | status=critique_passed
+2026-07-23 14:20:36 | INFO | synopsis-generator | GRAPH NODE END | language_editor | duration_ms=12753.29 | new_status=completed
+2026-07-23 14:20:36 | INFO | synopsis-generator | GRAPH NODE START | memory_manager | status=completed
+2026-07-23 14:20:48 | INFO | synopsis-generator | STORY MEMORY COMPACTED | story_id=3 | characters=0 | facts=0 | threads=5
+2026-07-23 14:20:48 | INFO | synopsis-generator | GRAPH NODE END | memory_manager | duration_ms=12527.07 | new_status=memory_ready
+2026-07-23 14:20:48 | INFO | synopsis-generator | GRAPH NODE START | persist_story | status=memory_ready
+2026-07-23 14:20:48 | INFO | synopsis-generator | SYNOPSIS PERSISTED | synopsis_id=19 | story_id=3
+2026-07-23 14:20:48 | INFO | synopsis-generator | STORY MEMORY SAVED | story_id=3 | version=2
+2026-07-23 14:20:49 | INFO | synopsis-generator | GRAPH NODE END | persist_story | duration_ms=109.67 | new_status=completed
+2026-07-23 14:20:49 | INFO | synopsis-generator | GRAPH FINISHED | thread_id=415822a8-5f65-4b4c-a93b-f56a1d0bcc18 | status=completed

@@ -1,8 +1,26 @@
-from typing import TypedDict
+from typing import Any, TypedDict
 
 
 class SynopsisState(TypedDict, total=False):
     """Состояние LangGraph."""
+    # Долговременная память произведения
+    story_id: int | None
+    story_title: str
+    story_memory: dict[str, Any]
+    story_memory_version: int
+    story_context_loaded: bool
+
+    # Результат обновления памяти
+    story_memory_ready: bool
+    story_memory_saved: bool
+
+    # Persistence
+    # произведение между разными запусками
+    synopsis_id: int | None
+
+    # Первоначальный запрос до HITL-уточнений
+    original_user_request: str
+
     # Идентификатор сохраняемого диалога
     thread_id: str
 
