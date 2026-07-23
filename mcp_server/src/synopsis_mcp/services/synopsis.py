@@ -21,6 +21,10 @@ class SynopsisService:
         critique_passed: bool | None,
         critique_score: int | None,
         revision_count: int,
+        story_id: int | None = None,
+        thread_id: str | None = None,
+        user_request: str | None = None,
+        entry_summary: str | None = None,
     ) -> SaveSynopsisResult:
 
         try:
@@ -43,6 +47,10 @@ class SynopsisService:
                     cursor.execute(
                         """
                         INSERT INTO synopsis_generations (
+                            story_id,
+                            thread_id,
+                            user_request,
+                            entry_summary,
                             idea,
                             genre,
                             style,
@@ -66,6 +74,10 @@ class SynopsisService:
                             %s,
                             %s,
                             %s,
+                            %s,
+                            %s,
+                            %s,
+                            %s,
                             %s
                         )
                         RETURNING
@@ -73,6 +85,10 @@ class SynopsisService:
                             created_at
                         """,
                         (
+                            story_id,
+                            thread_id,
+                            user_request,
+                            entry_summary,
                             idea,
                             genre,
                             style,

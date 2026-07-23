@@ -105,6 +105,40 @@ def register_synopsis_tools(
                 ),
             ),
         ] = 0,
+        story_id: Annotated[
+            int | None,
+            Field(
+                ge=1,
+                description=(
+                    "ID истории, к которой "
+                    "относится генерация."
+                ),
+            ),
+        ] = None,
+        thread_id: Annotated[
+            str | None,
+            Field(
+                description=(
+                    "LangGraph thread_id генерации."
+                ),
+            ),
+        ] = None,
+        user_request: Annotated[
+            str | None,
+            Field(
+                description=(
+                    "Исходное сообщение пользователя."
+                ),
+            ),
+        ] = None,
+        entry_summary: Annotated[
+            str | None,
+            Field(
+                description=(
+                    "Краткое содержание данной генерации."
+                ),
+            ),
+        ] = None,
         service: SynopsisService = Depends(
             get_synopsis_service,
         ),
@@ -122,6 +156,10 @@ def register_synopsis_tools(
         """
 
         return service.save_synopsis(
+            story_id=story_id,
+            thread_id=thread_id,
+            user_request=user_request,
+            entry_summary=entry_summary,
             idea=idea,
             genre=genre,
             style=style,
