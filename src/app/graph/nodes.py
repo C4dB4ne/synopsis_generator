@@ -1,6 +1,7 @@
-import logging
+from langgraph.types import interrupt
 
 from app.graph.state import SynopsisState
+from app.core.logger import logger
 from app.graph.llm import (
     create_requirements_llm,
     create_clarification_llm,
@@ -36,9 +37,6 @@ clarification_generator = (
         method="json_schema",
     )
 )
-
-
-logger = logging.getLogger("uvicorn.error")
 
 
 REQUIRED_FIELDS: tuple[
@@ -84,11 +82,11 @@ def collect_requirements(state: SynopsisState):
         messages = (
             REQUIREMENTS_ANALYSIS_PROMPT
             .format_messages(
-                idea=state.get("idea", "") or "не указано",
-                genre=state.get("genre", "") or "не указано",
-                style=state.get("style", "") or "не указано",
-                language=state.get("language", "") or "не указано",
-                length=state.get("length", "") or "не указано",
+                idea=state.get("idea", ""),
+                genre=state.get("genre", ""),
+                style=state.get("style", ""),
+                language=state.get("language", ""),
+                length=state.get("length", ""),
                 latest_user_message=state.get(
                     "latest_user_message",
                     "",
@@ -100,12 +98,6 @@ def collect_requirements(state: SynopsisState):
             messages,
         )
 
-        def _clean_requirement(value: str | None):
-            if value is None:
-                return ""
-
-            return value.strip()
-
         if not isinstance(
             analysis,
             RequirementsAnalysis,
@@ -115,8 +107,52 @@ def collect_requirements(state: SynopsisState):
                 "an unexpected result type."
             )
 
+        resolved_idea = _merge_requirement(
+            state.get("idea"),
+            analysis.idea,
+        )
+
+        resolved_genre = _merge_genre(
+            state.get("genre"),
+            analysis.genre,
+        )
+
+        resolved_style = _merge_requirement(
+            state.get("style"),
+            analysis.style,
+        )
+
+        resolved_language = _merge_requirement(
+            state.get("language"),
+            analysis.language,
+        )
+
+        resolved_length = _merge_requirement(
+            state.get("length"),
+            analysis.length,
+        )
+
+        resolved_requirements = {
+            "idea": resolved_idea,
+            "genre": resolved_genre,
+            "style": resolved_style,
+            "language": resolved_language,
+            "length": resolved_length,
+        }
+
+        detected_missing_fields = [
+            field
+            for field in REQUIRED_FIELDS
+            if not resolved_requirements[
+                field
+            ]
+        ]
+
         missing_fields = _unique_fields(
-            analysis.missing_fields,
+            [
+                *analysis.missing_fields,
+                *detected_missing_fields,
+            ]
         )
 
         ambiguous_fields = [
@@ -133,19 +169,22 @@ def collect_requirements(state: SynopsisState):
             if point.strip()
         ]
 
-        has_issues = bool(
+        if (
+            missing_fields
+            and not clarification_points
+        ):
+            clarification_points = [
+                (
+                    f"Необходимо уточнить "
+                    f"{FIELD_LABELS[field]}."
+                )
+                for field in missing_fields
+            ]
+
+        requirements_complete = not (
             missing_fields
             or ambiguous_fields
-            or clarification_points
         )
-
-        if not analysis.requirements_complete and not has_issues:
-            logger.warning(
-                "Requirements analyzer marked requirements incomplete "
-                "but returned no clarification issues."
-            )
-
-        requirements_complete = not has_issues
 
         logger.info(
             (
@@ -158,37 +197,29 @@ def collect_requirements(state: SynopsisState):
                 "missing=%s | "
                 "ambiguous=%s"
             ),
+            analysis.requirements_complete,
             requirements_complete,
-            analysis.genre,
-            analysis.style,
-            analysis.language,
-            analysis.length,
+            resolved_genre,
+            resolved_style,
+            resolved_language,
+            resolved_length,
             missing_fields,
             ambiguous_fields,
         )
 
         return {
-            "idea": _clean_requirement(
-                analysis.idea
-            ),
-            "genre": _clean_requirement(
-                analysis.genre
-            ),
-            "style": _clean_requirement(
-                analysis.style
-            ),
-            "language": _clean_requirement(
-                analysis.language
-            ),
-            "length": _clean_requirement(
-                analysis.length
-            ),
+            "idea": resolved_idea,
+            "genre": resolved_genre,
+            "style": resolved_style,
+            "language": resolved_language,
+            "length": resolved_length,
 
-            "requirements_complete": requirements_complete,
+            "requirements_complete": (
+                requirements_complete
+            ),
 
             "missing_fields": missing_fields,
             "ambiguous_fields": ambiguous_fields,
-
             "clarification_points": (
                 clarification_points
             ),
@@ -212,6 +243,84 @@ def collect_requirements(state: SynopsisState):
         return _fallback_requirements_analysis(
             state,
         )
+
+
+def _clean_requirement(
+    value: str | None,
+) -> str:
+    if value is None:
+        return ""
+
+    cleaned = value.strip()
+
+    invalid_values = {
+        "не указано",
+        "не указан",
+        "не указана",
+        "не определено",
+        "неизвестно",
+        "none",
+        "null",
+        "n/a",
+    }
+
+    if cleaned.lower() in invalid_values:
+        return ""
+
+    return cleaned
+
+
+def _clean_genre(
+    value: str | None,
+) -> str:
+    genre = _clean_requirement(
+        value,
+    )
+
+    internal_values = {
+        "universal_writer",
+        "fantasy_writer",
+        "drama_writer",
+        "thriller_writer",
+        "comedy_writer",
+    }
+
+    if genre.lower() in internal_values:
+        return ""
+
+    return genre
+
+
+def _merge_requirement(
+    current_value: str | None,
+    new_value: str | None,
+) -> str:
+    new_cleaned = _clean_requirement(
+        new_value,
+    )
+
+    if new_cleaned:
+        return new_cleaned
+
+    return _clean_requirement(
+        current_value,
+    )
+
+
+def _merge_genre(
+    current_value: str | None,
+    new_value: str | None,
+) -> str:
+    new_genre = _clean_genre(
+        new_value,
+    )
+
+    if new_genre:
+        return new_genre
+
+    return _clean_genre(
+        current_value,
+    )
 
 
 def _unique_fields(
@@ -426,6 +535,113 @@ def _build_fallback_clarification(state: SynopsisState):
         "Пожалуйста, уточните параметры "
         "будущего синопсиса."
     )
+
+
+def wait_for_clarification(
+    state: SynopsisState,
+):
+    """
+    Приостанавливает выполнение графа и ожидает
+    свободный ответ пользователя.
+
+    Нода не использует LLM.
+    После resume ответ становится новым
+    latest_user_message.
+    """
+
+    human_message = interrupt(
+        {
+            "type": "clarification",
+            "message": state.get(
+                "clarification_message",
+                "",
+            ),
+            "missing_fields": state.get(
+                "missing_fields",
+                [],
+            ),
+            "ambiguous_fields": state.get(
+                "ambiguous_fields",
+                [],
+            ),
+            "attempt": (
+                state.get(
+                    "clarification_count",
+                    0,
+                )
+                + 1
+            ),
+            "max_attempts": state.get(
+                "max_clarifications",
+                3,
+            ),
+        }
+    )
+
+    message = str(
+        human_message
+    ).strip()
+
+    clarification_count = (
+        state.get(
+            "clarification_count",
+            0,
+        )
+        + 1
+    )
+
+    logger.info(
+        (
+            "HITL RESUME RECEIVED | "
+            "thread_id=%s | "
+            "clarification=%d/%d"
+        ),
+        state.get("thread_id", "unknown"),
+        clarification_count,
+        state.get("max_clarifications", 3),
+    )
+
+    return {
+        "latest_user_message": message,
+        "clarification_count": clarification_count,
+        "clarification_message": "",
+        "status": "clarification_received",
+    }
+
+
+def clarification_limit_reached(
+    state: SynopsisState,
+):
+    """
+    Завершает workflow, если пользователь несколько раз
+    не предоставил достаточных требований.
+    """
+
+    logger.warning(
+        (
+            "Clarification limit reached | "
+            "thread_id=%s | "
+            "count=%d"
+        ),
+        state.get(
+            "thread_id",
+            "unknown",
+        ),
+        state.get(
+            "clarification_count",
+            0,
+        ),
+    )
+
+    return {
+        "status": "clarification_limit_reached",
+        "clarification_message": (
+            "Не удалось получить достаточно информации "
+            "для генерации синопсиса. "
+            "Пожалуйста, создайте новый запрос "
+            "с более подробным описанием."
+        ),
+    }
 
 
 def genre_router(state: SynopsisState):

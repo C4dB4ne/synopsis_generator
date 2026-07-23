@@ -15,13 +15,15 @@ from app.graph.nodes import (
     genre_router,
     language_editor,
     request_clarification,
+    wait_for_clarification,
+    clarification_limit_reached,
     thriller_writer,
     universal_writer,
 )
 from app.core.logger import log_graph_node
 
 
-def build_graph():
+def build_graph(checkpointer=None):
     """
     Создает и компилирует основной LangGraph.
     """
@@ -41,6 +43,19 @@ def build_graph():
         log_graph_node(
             "request_clarification",
             request_clarification,
+        ),
+    )
+
+    builder.add_node(
+        "wait_for_clarification",
+        wait_for_clarification,
+    )
+
+    builder.add_node(
+        "clarification_limit_reached",
+        log_graph_node(
+            "clarification_limit_reached",
+            clarification_limit_reached,
         ),
     )
 
@@ -119,6 +134,16 @@ def build_graph():
 
     builder.add_edge(
         "request_clarification",
+        "wait_for_clarification",
+    )
+
+    builder.add_edge(
+        "wait_for_clarification",
+        "collect_requirements",
+    )
+
+    builder.add_edge(
+        "clarification_limit_reached",
         END,
     )
 
@@ -153,7 +178,5 @@ def build_graph():
         END,
     )
 
-    return builder.compile()
+    return builder.compile(checkpointer=checkpointer)
 
-
-synopsis_graph = build_graph()

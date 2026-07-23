@@ -3,6 +3,9 @@ from typing import TypedDict
 
 class SynopsisState(TypedDict, total=False):
     """Состояние LangGraph."""
+    # Идентификатор сохраняемого диалога
+    thread_id: str
+
     # Диалог с пользователем
     latest_user_message: str
 

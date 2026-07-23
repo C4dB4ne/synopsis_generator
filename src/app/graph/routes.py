@@ -7,6 +7,7 @@ from app.core.logger import logger
 RequirementsRoute = Literal[
     "request_clarification",
     "genre_router",
+    "clarification_limit_reached",
 ]
 
 
@@ -29,11 +30,17 @@ CriticRoute = Literal[
 ]
 
 
-def route_after_requirements(state: SynopsisState) -> RequirementsRoute:
+def route_after_requirements(
+    state: SynopsisState,
+) -> RequirementsRoute:
     """
-    После проверки ТЗ - либо просим уточнения,
-    либо продолжаем генерацию.
+    После анализа требований:
+
+    - полное ТЗ -> Writer routing;
+    - неполное -> HITL;
+    - превышен лимит уточнений -> завершение
     """
+
     if state.get(
         "requirements_complete",
         False,
@@ -41,10 +48,33 @@ def route_after_requirements(state: SynopsisState) -> RequirementsRoute:
         route = "genre_router"
 
     else:
-        route = "request_clarification"
+        clarification_count = state.get(
+            "clarification_count",
+            0,
+        )
+
+        max_clarifications = state.get(
+            "max_clarifications",
+            3,
+        )
+
+        if (
+            clarification_count
+            >= max_clarifications
+        ):
+            route = (
+                "clarification_limit_reached"
+            )
+        else:
+            route = (
+                "request_clarification"
+            )
 
     logger.info(
-        "GRAPH ROUTE | collect_requirements -> %s",
+        (
+            "GRAPH ROUTE | "
+            "collect_requirements -> %s"
+        ),
         route,
     )
 
@@ -71,26 +101,18 @@ def route_to_writer(state: SynopsisState) -> WriterNode:
     if selected_writer not in allowed_writers:
         return "universal_writer"
 
-    logger.info(
-        "GRAPH ROUTE | genre_router -> %s",
-        selected_writer,
-    )
-
     return selected_writer
 
 
 def route_after_critic(state: SynopsisState) -> CriticRoute:
     """
-    Определяет, нужно ли повторно отправить текст писателю.
+    Определяет, нужно ли повторно отправить текст писателю
 
     Цикл останавливается, если:
     - Критик одобрил текст
-    или
+    ИЛИ
     - достигнут max_revisions
     """
-    if state.get("critique_passed", False):
-        return "language_editor"
-
     revision_count = state.get(
         "revision_count",
         0,
@@ -101,15 +123,21 @@ def route_after_critic(state: SynopsisState) -> CriticRoute:
         3,
     )
 
-    route = "request_clarification"
+    if state.get("critique_passed", False):
+        route = "language_editor"
 
-    if revision_count >= max_revisions:
-        return "language_editor"
+    elif revision_count >= max_revisions:
+        route = "language_editor"
+
+    else:
+        route = route_to_writer(state)
 
     logger.info(
         (
             "GRAPH ROUTE | critic | "
-            "passed=%s | revision=%d/%d | next=%s"
+            "passed=%s | "
+            "revision=%d/%d | "
+            "next=%s"
         ),
         state.get(
             "critique_passed",
@@ -120,4 +148,4 @@ def route_after_critic(state: SynopsisState) -> CriticRoute:
         route,
     )
 
-    return route_to_writer(state)
+    return route

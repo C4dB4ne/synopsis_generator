@@ -23,8 +23,37 @@ class SynopsisRequest(BaseModel):
         le=10,
     )
 
+    max_clarifications: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+    )
+
+
+class SynopsisResumeRequest(BaseModel):
+
+    thread_id: str = Field(
+        min_length=1,
+        max_length=255,
+        description=(
+            "Идентификатор ранее "
+            "приостановленного workflow."
+        ),
+    )
+
+    message: str = Field(
+        min_length=1,
+        description=(
+            "Свободный ответ пользователя "
+            "на уточняющий вопрос."
+        ),
+    )
+
 
 class SynopsisResponse(BaseModel):
+    thread_id: str
+    interrupted: bool = False
+
     status: str
 
     selected_writer: str | None = None
@@ -39,5 +68,6 @@ class SynopsisResponse(BaseModel):
     )
 
     revision_count: int = 0
+    clarification_count: int = 0
 
     clarification_message: str | None = None

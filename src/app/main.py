@@ -1,12 +1,19 @@
 import httpx
 import psycopg
-
-from fastapi import FastAPI, HTTPException
+from uuid import uuid4
 from contextlib import asynccontextmanager
 
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from langgraph.types import Command
+from fastapi import FastAPI, HTTPException, Request
+
 from app.config import settings
-from app.graph.builder import synopsis_graph
-from app.api.schemas import SynopsisRequest, SynopsisResponse
+from app.graph.builder import build_graph
+from app.api.schemas import (
+    SynopsisRequest,
+    SynopsisResumeRequest,
+    SynopsisResponse
+)
 from app.mcp.client import get_mcp_tools_safely, find_mcp_tool
 from app.core.logger import logger
 
@@ -21,11 +28,36 @@ async def lifespan(
     )
 
     try:
-        yield
+        async with (
+            AsyncPostgresSaver
+            .from_conn_string(
+                settings.database_url
+            )
+        ) as checkpointer:
+
+            logger.info(
+                "Initializing LangGraph "
+                "PostgreSQL checkpointer."
+            )
+
+            await checkpointer.setup()
+
+            app.state.synopsis_graph = (
+                build_graph(
+                    checkpointer=checkpointer,
+                )
+            )
+
+            logger.info(
+                "LangGraph checkpointer ready."
+            )
+
+            yield
 
     except Exception:
         logger.exception(
-            "Unhandled application lifespan error."
+            "Unhandled application "
+            "lifespan error."
         )
         raise
 
@@ -107,87 +139,264 @@ def dependencies_health() -> dict:
     "/api/v1/synopsis",
     response_model=SynopsisResponse,
 )
-async def generate_synopsis(request: SynopsisRequest):
-    """Запускает LangGraph для генерации синопсиса"""
+async def generate_synopsis(
+    payload: SynopsisRequest,
+    request: Request,
+):
+    """
+    Запускает новый LangGraph workflow.
+    """
+
+    thread_id = str(
+        uuid4()
+    )
+
+    logger.info(
+        "GRAPH START | thread_id=%s",
+        thread_id,
+    )
+
     initial_state = {
+        "thread_id": thread_id,
+
         "latest_user_message": (
-            request.message or ""
+            payload.message
         ),
 
-        "idea": request.idea or "",
-        "genre": request.genre or "",
-        "style": request.style or "",
-        "language": request.language or "",
-        "length": request.length or "",
+        "idea": (
+            payload.idea or ""
+        ),
+        "genre": (
+            payload.genre or ""
+        ),
+        "style": (
+            payload.style or ""
+        ),
+        "language": (
+            payload.language or ""
+        ),
+        "length": (
+            payload.length or ""
+        ),
 
         "clarification_count": 0,
-        "max_clarifications": 3,
+        "max_clarifications": (
+            payload.max_clarifications
+        ),
 
         "revision_count": 0,
-        "max_revisions": request.max_revisions,
+        "max_revisions": (
+            payload.max_revisions
+        ),
 
         "status": "started",
     }
 
-    mcp_tools = await get_mcp_tools_safely()
+    graph = (
+        request.app.state.synopsis_graph
+    )
 
-    result = await synopsis_graph.ainvoke(
+    result = await graph.ainvoke(
         initial_state,
-        config={
-            "recursion_limit": 20,
+        config=_graph_config(
+            thread_id,
+        ),
+    )
+
+    interrupt_payload = (
+        _get_interrupt_payload(
+            result,
+        )
+    )
+
+    if interrupt_payload:
+        logger.info(
+            (
+                "GRAPH PAUSED | "
+                "thread_id=%s | "
+                "reason=clarification"
+            ),
+            thread_id,
+        )
+
+    else:
+        await _persist_synopsis(
+            result,
+        )
+
+        logger.info(
+            (
+                "GRAPH FINISHED | "
+                "thread_id=%s | "
+                "status=%s"
+            ),
+            thread_id,
+            result.get(
+                "status",
+            ),
+        )
+
+    return _build_response(
+        result,
+        thread_id,
+    )
+
+
+@app.post(
+    "/api/v1/synopsis/resume",
+    response_model=SynopsisResponse,
+)
+async def resume_synopsis(
+    payload: SynopsisResumeRequest,
+    request: Request,
+):
+    """
+    Продолжает ранее приостановленный
+    LangGraph workflow.
+    """
+
+    thread_id = payload.thread_id
+
+    logger.info(
+        (
+            "GRAPH RESUME | "
+            "thread_id=%s"
+        ),
+        thread_id,
+    )
+
+    graph = (
+        request.app.state.synopsis_graph
+    )
+
+    result = await graph.ainvoke(
+        Command(
+            resume=payload.message,
+        ),
+        config=_graph_config(
+            thread_id,
+        ),
+    )
+
+    interrupt_payload = (
+        _get_interrupt_payload(
+            result,
+        )
+    )
+
+    if interrupt_payload:
+        logger.info(
+            (
+                "GRAPH PAUSED AGAIN | "
+                "thread_id=%s"
+            ),
+            thread_id,
+        )
+
+    else:
+        await _persist_synopsis(
+            result,
+        )
+
+        logger.info(
+            (
+                "GRAPH FINISHED | "
+                "thread_id=%s | "
+                "status=%s"
+            ),
+            thread_id,
+            result.get(
+                "status",
+            ),
+        )
+
+    return _build_response(
+        result,
+        thread_id,
+    )
+
+
+def _graph_config(
+    thread_id: str,
+) -> dict:
+    return {
+        "configurable": {
+            "thread_id": thread_id,
         },
+        "recursion_limit": 30,
+    }
+
+
+def _get_interrupt_payload(
+    result: dict,
+) -> dict | None:
+    interrupts = result.get(
+        "__interrupt__",
     )
 
-    save_tool = find_mcp_tool(
-        mcp_tools,
-        "save_synopsis",
+    if not interrupts:
+        return None
+
+    first_interrupt = interrupts[0]
+
+    value = getattr(
+        first_interrupt,
+        "value",
+        first_interrupt,
     )
 
-    if save_tool is not None:
-        try:
-            save_result = await save_tool.ainvoke(
-                {
-                    "idea": result.get("idea", ""),
-                    "genre": result.get("genre", ""),
-                    "style": result.get("style", ""),
-                    "language": result.get("language", ""),
-                    "requested_length": result.get("length", ""),
+    if isinstance(
+        value,
+        dict,
+    ):
+        return value
 
-                    "selected_writer": result.get("selected_writer"),
-                    "draft": result.get("draft"),
-                    "final_text": result.get("final_text"),
-                    "critique_passed": result.get("critique_passed"),
-                    "critique_score": result.get("critique_score"),
-                    "revision_count": result.get(
-                        "revision_count",
-                        0,
-                    ),
-                }
+    return {
+        "message": str(value),
+    }
+
+
+def _build_response(
+    result: dict,
+    thread_id: str,
+) -> SynopsisResponse:
+    interrupt_payload = (
+        _get_interrupt_payload(
+            result,
+        )
+    )
+
+    interrupted = (
+        interrupt_payload is not None
+    )
+
+    clarification_message = (
+        result.get(
+            "clarification_message",
+        )
+    )
+
+    if interrupt_payload:
+        clarification_message = (
+            interrupt_payload.get(
+                "message",
+                clarification_message,
             )
-
-            logger.info(
-                "save_synopsis MCP result: %s",
-                save_result,
-            )
-
-        except Exception as exc:
-            logger.warning(
-                "Failed to persist synopsis through MCP. "
-                "Continuing without persistence. Error: %s",
-                exc,
-            )
-
-    elif mcp_tools:
-        logger.warning(
-            "MCP Server is available, but "
-            "'save_synopsis' tool was not found."
         )
 
     return SynopsisResponse(
-        status=result.get(
-            "status",
-            "unknown",
+        thread_id=thread_id,
+        interrupted=interrupted,
+
+        status=(
+            "needs_clarification"
+            if interrupted
+            else result.get(
+                "status",
+                "unknown",
+            )
         ),
+
         selected_writer=result.get(
             "selected_writer",
         ),
@@ -211,7 +420,109 @@ async def generate_synopsis(request: SynopsisRequest):
             "revision_count",
             0,
         ),
-        clarification_message=result.get(
-            "clarification_message",
+        clarification_count=result.get(
+            "clarification_count",
+            0,
+        ),
+        clarification_message=(
+            clarification_message
         ),
     )
+
+
+async def _persist_synopsis(
+    result: dict,
+) -> None:
+    final_text = result.get(
+        "final_text",
+    )
+
+    if not final_text:
+        return
+
+    mcp_tools = (
+        await get_mcp_tools_safely()
+    )
+
+    save_tool = find_mcp_tool(
+        mcp_tools,
+        "save_synopsis",
+    )
+
+    if save_tool is None:
+        if mcp_tools:
+            logger.warning(
+                "MCP Server is available, "
+                "but save_synopsis was not found."
+            )
+
+        return
+
+    try:
+        save_result = (
+            await save_tool.ainvoke(
+                {
+                    "idea": result.get(
+                        "idea",
+                        "",
+                    ),
+                    "genre": result.get(
+                        "genre",
+                        "",
+                    ),
+                    "style": result.get(
+                        "style",
+                        "",
+                    ),
+                    "language": result.get(
+                        "language",
+                        "",
+                    ),
+                    "requested_length": (
+                        result.get(
+                            "length",
+                            "",
+                        )
+                    ),
+                    "selected_writer": (
+                        result.get(
+                            "selected_writer",
+                        )
+                    ),
+                    "draft": result.get(
+                        "draft",
+                    ),
+                    "final_text": final_text,
+                    "critique_passed": (
+                        result.get(
+                            "critique_passed",
+                        )
+                    ),
+                    "critique_score": (
+                        result.get(
+                            "critique_score",
+                        )
+                    ),
+                    "revision_count": (
+                        result.get(
+                            "revision_count",
+                            0,
+                        )
+                    ),
+                }
+            )
+        )
+
+        logger.info(
+            "save_synopsis MCP result: %s",
+            save_result,
+        )
+
+    except Exception as exc:
+        logger.warning(
+            (
+                "Failed to persist synopsis "
+                "through MCP. Error: %s"
+            ),
+            exc,
+        )
