@@ -1,0 +1,94 @@
+@startuml Additional_Features
+
+title Дополнительные возможности Synopsis Generator
+
+skinparam backgroundColor #FCFCFD
+skinparam shadowing false
+skinparam dpi 180
+skinparam DefaultFontName Arial
+skinparam DefaultFontSize 13
+skinparam TitleFontSize 18
+skinparam TitleFontColor #29384D
+
+skinparam component {
+    BorderColor #66788C
+    FontColor #243244
+}
+
+skinparam note {
+    BackgroundColor #F8FAFC
+    BorderColor #BEC8D5
+    FontColor #334155
+}
+
+package "Реализовано" #E7F2ED {
+    component "Long-term memory\nмежду запросами" as Memory #BFE0D1
+    component "Human-in-the-Loop" as HITL #B6DCCA
+    component "Writer ↔ Critic\nrevision loop" as Critic #ADD8C3
+    component "Версионирование\nStory Memory" as Versions #A5D4BC
+    component "Application\nLogging" as Logging #94CBAE
+    component "Graceful\nMCP degradation" as Graceful #8BC7A7
+}
+
+package "Частично" #F4F0E5 {
+    component "История\nсообщений" as History #E5D7A7
+    component "Выбор\nLLM модели" as Model #DDCE9E
+    component "Несколько\nMCP tools" as Tools #D7C894
+}
+
+package "Не реализовано" #F5E9E9 {
+    component "Distributed\nTracing" as Tracing #E6C1C1
+    component "Retry policy\nдля tools" as Retry #DFB7B7
+    component "Несколько\nMCP servers" as MultiMCP #D8AEAE
+}
+
+note right of History
+  Есть:
+  original_user_request,
+  latest_user_message,
+  checkpoints и generations.
+
+  Нет полноценного массива
+  HumanMessage / AIMessage.
+end note
+
+note right of Model
+  LLM_MODEL задаётся глобально.
+
+  Для ролей создаются отдельные
+  ChatOllama instances с разными
+  temperature, но model name один.
+
+  Per-request выбор отсутствует.
+end note
+
+note right of Tools
+  MCP Server предоставляет 5 tools.
+
+  Однако LLM-агенты не выбирают
+  их автономно: нужный tool
+  определяется кодом узла.
+end note
+
+note right of Graceful
+  MCP outage не обязан останавливать
+  Writer / Critic / Editor.
+
+  Но PostgreSQL обязателен для
+  AsyncPostgresSaver при старте API.
+end note
+
+note right of MultiMCP
+  Используется MultiServerMCPClient,
+  но настроен только один entry:
+  "synopsis".
+end note
+
+legend right
+|= Цвет |= Статус |
+|<#BFE0D1>| Реализовано |
+|<#E5D7A7>| Частично |
+|<#E6C1C1>| Не реализовано |
+endlegend
+
+@enduml

@@ -1,0 +1,100 @@
+@startuml State_Memory_Model
+
+title Модель состояния и памяти Synopsis Generator
+
+skinparam backgroundColor #FCFCFD
+skinparam shadowing false
+skinparam dpi 180
+skinparam DefaultFontName Arial
+skinparam DefaultFontSize 13
+skinparam TitleFontSize 18
+skinparam TitleFontColor #26364A
+skinparam ArrowColor #60758A
+
+skinparam component {
+    BorderColor #60758A
+    FontColor #1F2937
+}
+
+skinparam database {
+    BorderColor #52786F
+    FontColor #243C37
+}
+
+skinparam note {
+    BackgroundColor #F8FAFC
+    BorderColor #BCC8D4
+    FontColor #334155
+}
+
+package "LangGraph workflow" #E9F0F7 {
+    component "thread_id" as Thread #D8E6F3
+    component "SynopsisState" as State #D0E1F0
+    database "AsyncPostgresSaver\ncheckpoint tables" as Checkpoint #C7DCEB
+}
+
+package "Литературный проект" #EDF5F2 {
+    component "story_id" as Story #D7EAE4
+    database "story_projects\ncurrent memory" as StoryProjects #CBE5DD
+    database "story_memory_versions\nversion history" as MemoryVersions #BFE0D6
+}
+
+package "История генераций" #F1EEF7 {
+    component "synopsis_id" as Synopsis #DED9EE
+    database "synopsis_generations" as Generations #D4CFEB
+}
+
+Thread --> State : поле state +\nconfigurable.thread_id
+State --> Checkpoint : checkpointed state
+Checkpoint --> Thread : восстановление\nпо thread_id
+
+State --> Story : содержит story_id
+Story --> StoryProjects : PK литературного проекта
+StoryProjects --> MemoryVersions : story_id -> версии 1..N
+
+State --> Synopsis : после успешного\nsave_synopsis
+Synopsis --> Generations : PK генерации
+
+Generations --> StoryProjects : story_id\nnullable FK
+MemoryVersions --> Generations : source_generation_id\nnullable FK
+
+note right of Thread
+  Новый POST /api/v1/synopsis
+  создаёт новый UUID thread_id.
+
+  /resume повторно использует
+  тот же thread_id.
+end note
+
+note right of Story
+  story_id переживает
+  независимые HTTP-запросы.
+
+  Несколько thread_id могут
+  относиться к одной story.
+end note
+
+note right of Synopsis
+  synopsis_id появляется только
+  при успешном save_synopsis.
+
+  При ошибке persistence
+  он может остаться null.
+end note
+
+note bottom of MemoryVersions
+  source_generation_id тоже
+  может быть null, потому что
+  save_story_memory допускается
+  даже после неуспешного
+  save_synopsis.
+end note
+
+legend right
+|= Цветовая группа |= Назначение |
+|<#D8E6F3>| Thread / LangGraph state |
+|<#D7EAE4>| Long-term story memory |
+|<#DED9EE>| Generation history |
+endlegend
+
+@enduml

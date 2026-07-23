@@ -1,0 +1,119 @@
+@startuml MCP_Architecture
+
+title MCP — архитектура инструментального слоя
+
+skinparam backgroundColor #FCFCFD
+skinparam shadowing false
+skinparam dpi 180
+skinparam DefaultFontName Arial
+skinparam DefaultFontSize 13
+skinparam TitleFontSize 18
+skinparam TitleFontColor #26364A
+skinparam ArrowColor #60758A
+
+skinparam component {
+    BorderColor #61758A
+    FontColor #1F2937
+    BackgroundColor #EDF3F8
+}
+
+skinparam database {
+    BorderColor #547A73
+    FontColor #1F3A35
+    BackgroundColor #DDEDE8
+}
+
+skinparam note {
+    BackgroundColor #F8FAFC
+    BorderColor #BAC6D4
+    FontColor #334155
+}
+
+package "FastAPI / LangGraph" #E7EFF7 {
+    component "LangGraph Nodes" as graph #D9E7F4
+    component "MCP Client\nMultiServerMCPClient" as client #D1E3F1
+}
+
+package "Synopsis MCP Server" #EEF1F6 {
+
+    component "FastMCP Server\nHTTP 0.0.0.0:8001" as mcp #D7DFED
+
+    package "Tools" #F1EFF7 {
+        component "check_service" as healthTool #E0DDF0
+        component "save_synopsis" as synopsisTool #DDD9EE
+        component "create_story" as createStory #D9D5EC
+        component "get_story_context" as getStory #D5D1E9
+        component "save_story_memory" as saveMemory #D1CDE6
+    }
+
+    package "Services" #EDF5F3 {
+        component "HealthService" as healthService #D8EBE6
+        component "SynopsisService" as synopsisService #CEE6DF
+        component "StoryService" as storyService #C4E1D8
+    }
+}
+
+database "PostgreSQL" as postgres #B9D8CF
+cloud "FastAPI\n/health" as api #DFEAF5
+cloud "Ollama\n/api/version" as ollama #E4E5F2
+
+graph --> client : get_mcp_tools_safely()
+client --> mcp : MCP over HTTP
+
+mcp --> healthTool
+mcp --> synopsisTool
+mcp --> createStory
+mcp --> getStory
+mcp --> saveMemory
+
+healthTool --> healthService : Depends(...)
+synopsisTool --> synopsisService : Depends(...)
+createStory --> storyService : Depends(...)
+getStory --> storyService : Depends(...)
+saveMemory --> storyService : Depends(...)
+
+healthService --> api : target = api
+healthService --> ollama : target = ollama
+healthService --> postgres : target = postgres
+
+synopsisService --> postgres : INSERT\nsynopsis_generations
+storyService --> postgres : story_projects\nstory_memory_versions
+
+note right of client
+  Клиент сконфигурирован
+  как MultiServerMCPClient,
+  но сейчас содержит только
+  один server entry: "synopsis".
+
+  get_tools() вызывается
+  во время workflow.
+
+  Timeout/ошибка -> [].
+end note
+
+note bottom of graph
+  Недоступность MCP не обязана
+  останавливать генеративные узлы,
+  но чтение/создание story и
+  persistence становятся недоступны.
+
+  PostgreSQL всё равно обязателен
+  для запуска API checkpointer.
+end note
+
+note bottom of mcp
+  Tool — внешний MCP-интерфейс.
+  Service — реализация операций
+  с HTTP-инфраструктурой и PostgreSQL.
+end note
+
+legend right
+|= Цветовая группа |= Слой |
+|<#D9E7F4>| LangGraph / MCP Client |
+|<#D7DFED>| FastMCP |
+|<#D9D5EC>| MCP Tools |
+|<#C4E1D8>| Services |
+|<#B9D8CF>| PostgreSQL |
+endlegend
+
+@enduml

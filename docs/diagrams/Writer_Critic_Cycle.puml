@@ -1,0 +1,91 @@
+@startuml Writer_Critic_Cycle
+
+title Цикл Writer → Critic → Language Editor
+
+skinparam backgroundColor #FCFCFD
+skinparam shadowing false
+skinparam dpi 180
+skinparam DefaultFontName Arial
+skinparam DefaultFontSize 13
+skinparam TitleFontSize 18
+skinparam TitleFontColor #22324A
+skinparam ArrowColor #5B6F8E
+
+skinparam activity {
+  StartColor #6FA8DC
+  EndColor #6FA8DC
+  FontColor #1F2937
+  BorderColor #5C6B80
+  DiamondFontColor #2F3E52
+  DiamondBorderColor #7A8CA5
+  DiamondBackgroundColor #F7F9FC
+}
+
+skinparam note {
+  BackgroundColor #F8FAFC
+  BorderColor #B8C4D6
+  FontColor #334155
+}
+
+start
+
+#D9E6F2:selected_writer;
+
+repeat
+
+  #C9DDF1:Writer;
+
+  note right
+    Первая итерация:
+    создаёт draft с нуля.
+
+    При ревизии получает:
+    - текущий draft
+    - revision_instructions
+
+    На ревизии Writer увеличивает
+    revision_count на 1.
+  end note
+
+  #D9D4EC:Critic;
+
+  note right
+    critique_passed = true, только если:
+    must_revise = false
+    AND score >= 8
+
+    Critic возвращает:
+    score, issues,
+    revision_instructions.
+  end note
+
+repeat while (
+  critique_passed = false
+  AND revision_count < max_revisions
+?) is (REVISE)
+-> PASS или лимит;
+
+#D5E7E9:language_editor;
+
+if (critique_passed?) then (да)
+  #BFDCCE:status = completed;
+else (нет)
+  #E9D9C5:status = completed_with_warnings;
+  note right
+    Этот путь возможен,
+    когда достигнут max_revisions,
+    а Critic всё ещё не принял текст.
+  end note
+endif
+
+stop
+
+legend right
+|= Цвет |= Назначение |
+|<#C9DDF1>| Writer |
+|<#D9D4EC>| Critic |
+|<#D5E7E9>| Language Editor |
+|<#E9D9C5>| Завершение по лимиту ревизий |
+endlegend
+
+@enduml

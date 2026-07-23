@@ -1,0 +1,140 @@
+@startuml Story_Memory_Lifecycle
+
+title Жизненный цикл долговременной памяти истории
+
+skinparam backgroundColor #FCFCFD
+skinparam shadowing false
+skinparam dpi 180
+skinparam DefaultFontName Arial
+skinparam DefaultFontSize 13
+skinparam TitleFontSize 18
+skinparam TitleFontColor #29443F
+skinparam ArrowColor #5D7C75
+
+skinparam activity {
+    BorderColor #627F78
+    FontColor #1F3732
+    DiamondBorderColor #6F8D85
+    DiamondBackgroundColor #EEF5F2
+    DiamondFontColor #29443F
+    StartColor #638F83
+    EndColor #4E9B83
+}
+
+skinparam note {
+    BackgroundColor #F7FAF9
+    BorderColor #B9CBC6
+    FontColor #334A46
+}
+
+start
+
+#DCE9E5:Новый HTTP-запрос;
+
+if (story_id передан?) then (да)
+
+    #D3E6E0:load_story_context\n-> get_story_context;
+
+    if (контекст загружен?) then (да)
+        #CAE3DB:story_memory = snapshot N;
+    else (нет)
+        #EADFD5:Пустая memory /\nMCP unavailable;
+    endif
+
+else (нет)
+
+    #D8EBE4:story_memory = {}\nversion = 0;
+
+endif
+
+#D1E7E0:collect_requirements\n(+ HITL при необходимости);
+
+#C9E4DB:ensure_story_project;
+
+note right
+    Только для новой истории:
+    create_story пытается
+    получить постоянный story_id.
+
+    При недоступном MCP
+    генерация всё равно может
+    продолжиться без story_id.
+end note
+
+#CFE6DE:Writer использует story_memory;
+#C6E2D8:Critic сверяет draft\nс story_memory;
+#BDDFD2:language_editor;
+#B4DCCB:memory_manager;
+
+if (StoryMemory сформирован?) then (да)
+
+    #ABD8C4:story_memory_ready = true;
+
+else (нет)
+
+    #EADFD5:story_memory_ready = false;
+
+    note right
+        Старая memory остаётся
+        в состоянии без перезаписи.
+    end note
+
+endif
+
+#A9D9C3:persist_story;
+
+#A2D5BD:Получить MCP tools один раз;
+
+if (save_synopsis доступен?) then (да)
+
+    #9CCFBA:Попытка save_synopsis;
+
+    if (saved = true?) then (да)
+        #94CBB3:synopsis_id получен;
+    else (нет)
+        #E5DDD2:synopsis_id = null;
+    endif
+
+else (нет)
+    #E5DDD2:synopsis_id = null;
+endif
+
+if (story_id AND story_memory_ready\nAND save_story_memory доступен?) then (да)
+
+    #8BC7AC:save_story_memory\nsource_generation_id = synopsis_id;
+
+    note right
+        synopsis_id может быть null:
+        сохранение памяти не зависит
+        от успешности save_synopsis.
+    end note
+
+    if (saved = true?) then (да)
+
+        #82C3A5:Транзакционно:\nUPDATE story_projects\n+ INSERT story_memory_versions;
+
+        #79BF9E:memory_version = N + 1;
+
+    else (нет)
+        #EADFD5:Новая версия не сохранена;
+    endif
+
+else (нет)
+
+    #EADFD5:Новая версия памяти\nне сохраняется;
+
+endif
+
+stop
+
+legend right
+|= Оттенок |= Этап |
+|<#D3E6E0>| Загрузка памяти |
+|<#CFE6DE>| Использование контекста |
+|<#B4DCCB>| Memory Manager |
+|<#A9D9C3>| Persistence |
+|<#79BF9E>| Новая версия памяти |
+|<#EADFD5>| Fallback / пропуск |
+endlegend
+
+@enduml

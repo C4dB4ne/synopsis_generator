@@ -1,0 +1,143 @@
+@startuml Finalization_Memory
+
+title Финальная обработка, долговременная память и persistence
+
+skinparam backgroundColor #FCFCFD
+skinparam shadowing false
+skinparam dpi 180
+skinparam DefaultFontName Arial
+skinparam DefaultFontSize 13
+skinparam TitleFontSize 18
+skinparam TitleFontColor #263B45
+skinparam ArrowColor #607B82
+
+skinparam activity {
+    BorderColor #627A82
+    FontColor #1F2937
+    DiamondBackgroundColor #EEF5F4
+    DiamondBorderColor #718C8A
+    DiamondFontColor #294A48
+    StartColor #738DA3
+    EndColor #54A286
+}
+
+skinparam note {
+    BackgroundColor #F7FAF9
+    BorderColor #B9CBC6
+    FontColor #334A46
+}
+
+start
+
+#DCE5EE:language_editor;
+
+note right
+    Исправляет:
+    - грамматику
+    - орфографию
+    - пунктуацию
+    - лексические повторы
+    - неестественные формулировки
+    - плохо читаемые конструкции
+
+    Не должен менять сюжет,
+    персонажей, события и смысл.
+end note
+
+#D5E7E9:final_text;
+
+#CDE9E3:memory_manager;
+
+if (final_text непустой?) then (да)
+
+    #C4E6DA:previous_memory = story_memory;
+
+    #BBE2D2:StoryMemory structured output;
+
+    if (LLM успешно вернул StoryMemory?) then (да)
+
+        #B2DECA:story_memory = новый snapshot\nstory_memory_ready = true;
+
+    else (нет)
+
+        #F1DDCF:story_memory_ready = false;
+
+        note right
+            Старый story_memory
+            не перезаписывается.
+        end note
+    endif
+
+else (нет)
+
+    #EEDFD5:status = memory_skipped\nstory_memory_ready = false;
+
+endif
+
+#A9D9C3:persist_story;
+
+#A1D4BC:get_mcp_tools_safely();
+
+if (tools пуст?) then (да)
+
+    #E8DDD2:story_memory_saved = false;
+
+else (нет)
+
+    if (save_synopsis найден?) then (да)
+
+        #99CFB5:Попытка save_synopsis;
+
+        if (saved=true?) then (да)
+            #91C9AE:synopsis_id получен;
+        else (нет)
+            #E8DDD2:synopsis_id = null;
+        endif
+
+    else (нет)
+        #E8DDD2:synopsis_id = null;
+    endif
+
+    if (story_id AND story_memory_ready\nAND save_story_memory найден?) then (да)
+
+        #89C4A7:save_story_memory\nsource_generation_id=synopsis_id;
+
+        note right
+            synopsis_id может быть null.
+            Сохранение новой memory version
+            не зависит от успеха save_synopsis.
+        end note
+
+        if (saved=true?) then (да)
+            #82BEA0:story_memory_saved = true\nstory_memory_version = новая версия;
+        else (нет)
+            #DFDDD6:story_memory_saved = false;
+        endif
+
+    else (нет)
+
+        #DFDDD6:story_memory_saved = false;
+
+    endif
+
+endif
+
+if (critique_passed?) then (да)
+    #79B899:status = completed;
+else (нет)
+    #DDBF92:status = completed_with_warnings;
+endif
+
+stop
+
+legend right
+|= Оттенок |= Этап |
+|<#DCE5EE>| Языковая редактура |
+|<#CDE9E3>| Формирование памяти |
+|<#A9D9C3>| MCP persistence |
+|<#F1DDCF>| Memory fallback |
+|<#79B899>| Completed |
+|<#DDBF92>| Completed with warnings |
+endlegend
+
+@enduml

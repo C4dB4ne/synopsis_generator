@@ -1,0 +1,92 @@
+@startuml Checkpoint_HITL
+
+title LangGraph checkpoint и Human-in-the-Loop
+
+skinparam backgroundColor #FCFCFD
+skinparam shadowing false
+skinparam dpi 180
+skinparam DefaultFontName Arial
+skinparam DefaultFontSize 13
+skinparam TitleFontSize 18
+skinparam TitleFontColor #293B52
+
+skinparam sequence {
+    ArrowColor #62778F
+    LifeLineBorderColor #75889B
+    LifeLineBackgroundColor #F7F9FB
+    ParticipantBorderColor #687D91
+    ParticipantFontColor #253747
+}
+
+skinparam database {
+    BorderColor #557B73
+    BackgroundColor #D8EAE5
+}
+
+skinparam note {
+    BackgroundColor #F9FAFC
+    BorderColor #BDC7D3
+    FontColor #334155
+}
+
+actor "Пользователь" as User #E9EDF4
+participant "FastAPI" as API #DEE8F2
+participant "LangGraph" as Graph #D3E3EF
+participant "wait_for_clarification" as Wait #CCDDEB
+database "AsyncPostgresSaver\nPostgreSQL checkpoint tables" as DB #C8E3DC
+
+User -> API : POST /api/v1/synopsis
+API -> API : thread_id = uuid4()
+API -> Graph : ainvoke(initial_state,\nconfig.thread_id)
+
+Graph -> DB : checkpoint writes\nдля thread_id
+Graph -> Wait : route после\nrequest_clarification
+Wait -> Wait : interrupt(payload)
+
+note over Graph,DB
+  Checkpointer интегрирован в
+  скомпилированный граф.
+  Приложение не вызывает INSERT
+  checkpoint-таблиц вручную.
+end note
+
+Graph -> DB : сохранить состояние\nпри остановке
+Graph --> API : result содержит __interrupt__
+API --> User : interrupted=true\nstatus=needs_clarification\nthread_id + message
+
+... ответ пользователя ...
+
+User -> API : POST /api/v1/synopsis/resume\nthread_id + message
+API -> Graph : ainvoke(Command(resume=message),\nтот же config.thread_id)
+Graph -> DB : восстановить checkpoint
+DB --> Graph : состояние thread
+
+Graph -> Wait : узел запускается заново
+Wait -> Wait : interrupt(...) возвращает\nresume value
+Wait --> Graph : latest_user_message = message\nclarification_count += 1
+
+Graph -> Graph : edge -> collect_requirements
+Graph -> DB : новые checkpoint writes
+
+alt требований снова недостаточно
+    Graph -> Wait : новый цикл HITL
+else workflow завершён
+    Graph --> API : финальное состояние
+    API --> User : SynopsisResponse
+end
+
+note over Graph,Wait
+  Важная семантика interrupt:
+  при resume прерванный узел
+  выполняется заново с начала.
+end note
+
+legend right
+|= Цвет |= Слой |
+|<#DEE8F2>| FastAPI |
+|<#D3E3EF>| LangGraph |
+|<#CCDDEB>| Interrupt node |
+|<#C8E3DC>| PostgreSQL Checkpointer |
+endlegend
+
+@enduml

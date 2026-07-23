@@ -1,0 +1,106 @@
+@startuml Writer_Routing
+
+title Маршрутизация между Writer-узлами
+
+skinparam backgroundColor #FCFCFD
+skinparam shadowing false
+skinparam dpi 180
+skinparam DefaultFontName Arial
+skinparam DefaultFontSize 13
+skinparam TitleFontSize 18
+skinparam TitleFontColor #28364A
+skinparam ArrowColor #66788D
+
+skinparam activity {
+    BorderColor #66788D
+    FontColor #1F2937
+    DiamondBackgroundColor #EEF2F7
+    DiamondBorderColor #78899D
+    DiamondFontColor #28364A
+    StartColor #6D8FB5
+    EndColor #7D9BB8
+}
+
+skinparam note {
+    BackgroundColor #F8FAFC
+    BorderColor #C0CAD6
+    FontColor #334155
+}
+
+start
+
+#D9E6F2:genre_router;
+
+note right
+    genre приводится к lowercase.
+
+    Проверка ключевых слов идёт
+    в фиксированном порядке:
+    fantasy -> drama -> thriller -> comedy.
+
+    Первое совпадение определяет
+    selected_writer.
+
+    Нет совпадений ->
+    universal_writer.
+end note
+
+#D3E1EF:route_to_writer;
+
+note right
+    route_to_writer проверяет,
+    что selected_writer входит
+    в разрешённый набор.
+
+    Неизвестное значение ->
+    universal_writer.
+end note
+
+switch (selected_writer)
+
+    case (fantasy_writer)
+        #C9DDF1:fantasy_writer;
+
+    case (drama_writer)
+        #D1D9F0:drama_writer;
+
+    case (thriller_writer)
+        #D9D4EC:thriller_writer;
+
+    case (comedy_writer)
+        #E2D2E6:comedy_writer;
+
+    case (universal_writer)
+        #E8D5DF:universal_writer;
+
+endswitch
+
+#D7DFE8:_run_writer;
+
+note right
+    Все Writer используют общий механизм.
+
+    В prompt входят:
+    - idea / genre / style / language / length
+    - latest_user_message
+    - story_memory
+
+    При ревизии дополнительно:
+    - текущий draft
+    - revision_instructions
+end note
+
+#D5DDE7:critic;
+
+stop
+
+legend right
+|= Цветовая группа |= Writer |
+|<#C9DDF1>| Fantasy |
+|<#D1D9F0>| Drama |
+|<#D9D4EC>| Thriller |
+|<#E2D2E6>| Comedy |
+|<#E8D5DF>| Universal |
+endlegend
+
+@enduml

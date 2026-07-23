@@ -1,0 +1,82 @@
+@startuml Limitations_Roadmap
+
+title Synopsis Generator — ограничения и направления развития
+
+left to right direction
+
+skinparam backgroundColor #FCFCFD
+skinparam shadowing false
+skinparam dpi 180
+skinparam DefaultFontName Arial
+skinparam DefaultFontSize 13
+skinparam TitleFontSize 18
+skinparam TitleFontColor #29384A
+skinparam ArrowColor #687B8D
+
+skinparam component {
+    BorderColor #68798A
+    FontColor #243342
+}
+
+skinparam note {
+    BackgroundColor #F8FAFC
+    BorderColor #BEC8D3
+    FontColor #334155
+}
+
+package "Текущий MVP" #E8F1ED {
+    component "Long-term\nStory Memory" as Memory #BBDDCF
+    component "Human-in-the-Loop" as HITL #B1D8C8
+    component "Writer → Critic\nRevision Loop" as Loop #A8D4C1
+    component "MCP Persistence" as MCP #9FCFBA
+    component "Application Logging" as Logs #96CBB3
+}
+
+package "Текущие ограничения" #F5EFE4 {
+    component "Keyword-based\nGenre Routing" as Genre #E7D4A8
+    component "Один LLM_MODEL\nдля всех ролей" as OneModel #E1CDA0
+    component "Нет полного\nChat History" as NoHistory #DAC798
+    component "Нет Retry\nPolicy" as NoRetry #D5C090
+    component "Один настроенный\nMCP Server" as OneMCP #CEB988
+    component "Нет Semantic\nRetrieval" as NoVector #C8B380
+}
+
+package "Возможное развитие" #EEEAF5 {
+    component "Multi-agent /\nMulti-specialist Writers" as MultiWriter #D8CBE9
+    component "Per-role\nModel Selection" as Models #D0C3E5
+    component "Message\nHistory" as History #C7BBE1
+    component "Retry +\nBackoff" as Retry #BFB3DC
+    component "Multiple\nMCP Servers" as MultiMCP #B7ABD8
+    component "Vector Memory\n+ Retrieval" as Vector #AFA3D4
+    component "Tracing &\nObservability" as Tracing #A69BCD
+}
+
+Memory --> NoVector : snapshot без\nsemantic retrieval
+HITL --> NoHistory : сохраняется state,\nно не полный чат
+Loop --> Genre : один selected_writer
+MCP --> NoRetry : нет централизованного retry
+MCP --> OneMCP : один server entry
+Logs --> Tracing : нет distributed tracing
+
+Genre --> MultiWriter : расширить routing
+OneModel --> Models : разделить model config
+NoHistory --> History : добавить сообщения
+NoRetry --> Retry : ограниченные повторы
+OneMCP --> MultiMCP : добавить server entries
+NoVector --> Vector : добавить retrieval
+Logs --> Tracing : добавить traces
+
+note bottom of OneModel
+  Сейчас роли используют один
+  settings.llm_model, но отдельные
+  LLM instances имеют разные temperature.
+end note
+
+legend right
+|= Цвет |= Значение |
+|<#BBDDCF>| Возможности текущего MVP |
+|<#E7D4A8>| Ограничения |
+|<#D8CBE9>| Направления развития |
+endlegend
+
+@enduml

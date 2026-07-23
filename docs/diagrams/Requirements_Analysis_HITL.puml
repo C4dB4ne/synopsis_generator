@@ -1,0 +1,126 @@
+@startuml Requirements_Analysis_HITL
+
+title Анализ требований и Human-in-the-Loop
+
+skinparam backgroundColor #FCFCFE
+skinparam shadowing false
+skinparam dpi 180
+skinparam ArrowColor #4C6A92
+skinparam DefaultFontName Arial
+skinparam DefaultFontSize 13
+skinparam TitleFontSize 18
+skinparam TitleFontColor #23395B
+
+skinparam activity {
+  BackgroundColor #F4F7FB
+  BorderColor #5B6B8A
+  FontColor #1F2937
+  DiamondBackgroundColor #FFF4CC
+  DiamondBorderColor #D4A017
+  DiamondFontColor #5C4400
+  StartColor #5EC27F
+  EndColor #E76F51
+}
+
+skinparam note {
+  BackgroundColor #FFFBEA
+  BorderColor #D6B656
+  FontColor #5B4A00
+}
+
+start
+
+partition "LangGraph" {
+
+  #E7EEF8:collect_requirements;
+
+  note right
+    Structured output извлекает:
+    - idea
+    - genre
+    - style
+    - language
+    - length
+
+    Результат объединяется
+    с уже заполненным state.
+  end note
+
+  if (requirements_complete?) then (да)
+
+    #D5E8E1:ensure_story_project;
+    stop
+
+  else (нет)
+
+    if (clarification_count >=\nmax_clarifications?) then (да)
+
+      #F1D8D8:clarification_limit_reached;
+
+      note right
+        Граф завершается через END.
+      end note
+
+      stop
+
+    else (нет)
+
+      #E6E0F1:request_clarification;
+
+      note right
+        LLM формирует вопрос.
+        При ошибке используется
+        deterministic fallback.
+      end note
+
+      #DDD8ED:wait_for_clarification;
+
+      note right
+        Внутри узла вызывается interrupt()
+        с clarification payload.
+      end note
+
+    endif
+  endif
+}
+
+partition "FastAPI / HITL" {
+
+  #D8E5F1:Ответ API:\ninterrupted=true\nstatus=needs_clarification\nthread_id;
+
+  #F4EBD8:Ответ пользователя;
+
+  #D5E1EF:POST /api/v1/synopsis/resume;
+
+  #CFDDEC:Command(resume=message)\n+ тот же thread_id;
+}
+
+partition "LangGraph" {
+
+  #DDD8ED:wait_for_clarification\nзапускается заново;
+
+  note right
+    При повторном запуске interrupt()
+    получает resume value вместо
+    новой остановки.
+
+    Затем:
+    latest_user_message = ответ
+    clarification_count += 1
+  end note
+
+  #E7EEF8:collect_requirements;
+}
+
+stop
+
+legend right
+|= Цвет |= Значение |
+|<#E7EEF8>| Анализ требований |
+|<#FFF4CC>| Условная маршрутизация |
+|<#E6E0F1>| Формирование / ожидание уточнения |
+|<#D8E5F1>| API / resume |
+|<#F1D8D8>| Завершение по лимиту |
+endlegend
+
+@enduml

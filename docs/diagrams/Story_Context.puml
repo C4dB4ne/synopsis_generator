@@ -1,0 +1,156 @@
+@startuml Story_Context
+
+title Загрузка и подготовка контекста литературного проекта
+
+skinparam backgroundColor #FCFCFD
+skinparam shadowing false
+skinparam dpi 180
+skinparam DefaultFontName Arial
+skinparam DefaultFontSize 13
+skinparam TitleFontSize 18
+skinparam TitleFontColor #24364B
+skinparam ArrowColor #61758A
+
+skinparam activity {
+    BorderColor #60758A
+    FontColor #1F2937
+    DiamondBorderColor #71859B
+    DiamondBackgroundColor #EEF4FA
+    DiamondFontColor #24364B
+    StartColor #6388B4
+    EndColor #62A6A2
+}
+
+skinparam note {
+    BackgroundColor #F7FAFC
+    BorderColor #BCC9D6
+    FontColor #334155
+}
+
+start
+
+#DCE9F7:load_story_context;
+
+if (story_id передан?) then (да)
+
+    #D4E5F3:get_mcp_tools_safely;
+
+    if (get_story_context доступен?) then (да)
+
+        #CBE2EE:get_story_context(story_id);
+
+        if (found = true?) then (да)
+
+            #C3DFE7:Загрузить контекст;
+
+            note right
+                SynopsisState получает:
+                - story_title
+                - premise -> idea
+                - genre
+                - style
+                - language
+                - story_memory
+                - story_memory_version
+
+                story_context_loaded = true
+            end note
+
+        else (нет)
+
+            if (result.error присутствует?) then (да)
+
+                #F3E2D3:story_context_unavailable;
+
+                note right
+                    Техническая ошибка MCP/DB:
+                    workflow продолжает работу
+                    с пустой memory.
+                end note
+
+            else (нет)
+
+                #F4D9D9:ValueError:\nStory not found;
+
+                note right
+                    FastAPI преобразует
+                    ValueError в HTTP 404.
+                end note
+
+                stop
+            endif
+        endif
+
+    else (нет)
+
+        #F3E2D3:story_context_unavailable;
+
+        note right
+            Tool недоступен:
+            workflow продолжает работу
+            без загруженной памяти.
+        end note
+
+    endif
+
+else (нет)
+
+    #D9EDE7:story_memory = {}\nstory_memory_version = 0\nstory_context_loaded = false;
+
+endif
+
+#C7E7DD:collect_requirements\n(+ HITL при необходимости);
+
+#BCE1D4:ensure_story_project;
+
+if (story_id уже есть?) then (да)
+
+    #B5DCCF:status = story_project_ready;
+
+else (нет)
+
+    #ABD7C8:Найти create_story;
+
+    if (create_story доступен\nи created=true?) then (да)
+
+        #A4D2C1:Сохранить новый story_id;
+
+        note right
+            Также устанавливаются:
+            story_title
+            story_memory = {}
+            story_memory_version = 0
+            story_context_loaded = true
+        end note
+
+    else (нет)
+
+        #F3E2D3:status = story_project_unavailable;
+
+        note right
+            Builder всё равно ведёт
+            дальше в genre_router.
+
+            Генерация возможна,
+            но persistent story_id
+            не создан.
+        end note
+
+    endif
+endif
+
+#C2E1D7:genre_router;
+
+stop
+
+legend right
+|= Оттенок |= Назначение |
+|<#DCE9F7>| Загрузка контекста |
+|<#C3DFE7>| Контекст существующей истории |
+|<#D9EDE7>| Новая история |
+|<#ABD7C8>| Создание story project |
+|<#F3E2D3>| Graceful degradation |
+|<#F4D9D9>| Story не существует -> HTTP 404 |
+endlegend
+
+@enduml

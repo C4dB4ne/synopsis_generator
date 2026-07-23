@@ -1,0 +1,162 @@
+@startuml Synopsis_Graph
+
+title Synopsis Generator — фактический LangGraph workflow
+
+skinparam backgroundColor #FCFCFD
+skinparam shadowing false
+skinparam dpi 180
+skinparam DefaultFontName Arial
+skinparam DefaultFontSize 13
+skinparam TitleFontSize 18
+skinparam TitleFontColor #26364A
+skinparam ArrowColor #60758A
+
+skinparam activity {
+  BorderColor #60758A
+  FontColor #1F2937
+  DiamondBackgroundColor #EEF3F8
+  DiamondBorderColor #74879B
+  DiamondFontColor #24364B
+  StartColor #6388B4
+  EndColor #5A9E88
+}
+
+skinparam note {
+  BackgroundColor #F8FAFC
+  BorderColor #BCC8D4
+  FontColor #334155
+}
+
+start
+
+#DCE9F7:load_story_context;
+
+note right
+  story_id отсутствует:
+  память остаётся пустой.
+
+  story_id существует:
+  get_story_context пытается
+  загрузить premise, genre,
+  style, language и memory.
+
+  Не найденный story_id при
+  доступном MCP -> ValueError -> HTTP 404.
+end note
+
+#D5E5F3:collect_requirements;
+
+if (requirements_complete?) then (да)
+
+  #CFE3EE:ensure_story_project;
+
+else (нет)
+
+  if (clarification_count >=\nmax_clarifications?) then (да)
+
+    #F0D8D8:clarification_limit_reached;
+    stop
+
+  else (нет)
+
+    #E8E0F1:request_clarification;
+    #DED9EE:wait_for_clarification\ninterrupt();
+
+    note right
+      Workflow приостанавливается.
+      API возвращает:
+      interrupted = true
+      status = needs_clarification
+      thread_id
+    end note
+
+    #D7D3E9:Command(resume=message)\nтот же thread_id;
+
+    note right
+      wait_for_clarification
+      запускается заново.
+      interrupt() получает resume value,
+      обновляет latest_user_message
+      и увеличивает clarification_count.
+    end note
+
+    #D5E5F3:collect_requirements;
+
+  endif
+endif
+
+#C6E0E8:genre_router;
+
+note right
+  genre_router записывает
+  selected_writer.
+
+  route_to_writer направляет
+  в один из пяти Writer-узлов.
+end note
+
+repeat
+
+  switch (selected_writer)
+    case (fantasy_writer)
+      #C9DDF1:fantasy_writer;
+    case (drama_writer)
+      #D1D9F0:drama_writer;
+    case (thriller_writer)
+      #D9D4EC:thriller_writer;
+    case (comedy_writer)
+      #E2D2E6:comedy_writer;
+    case (universal_writer)
+      #E8D5DF:universal_writer;
+  endswitch
+
+  #DDDDEB:critic;
+
+  note right
+    critique_passed = true только если:
+    must_revise = false
+    AND score >= 8
+  end note
+
+repeat while (
+  critique_passed = false
+  AND revision_count < max_revisions
+?) is (REVISE)
+-> PASS или достигнут max_revisions;
+
+#D5E7E9:language_editor;
+
+note right
+  PASS -> status completed
+
+  Лимит ревизий при непройденной
+  критике -> completed_with_warnings
+end note
+
+#CDE9E3:memory_manager;
+
+note right
+  При наличии final_text формирует
+  новый полный StoryMemory snapshot.
+
+  При ошибке старая memory
+  не перезаписывается.
+end note
+
+#A9D9C3:persist_story;
+
+note right
+  Один раз получает MCP tools.
+
+  1. save_synopsis — если tool доступен.
+  2. save_story_memory — независимо от
+     успеха save_synopsis, если есть:
+     story_id + story_memory_ready + tool.
+
+  source_generation_id может быть null,
+  если synopsis не удалось сохранить.
+end note
+
+stop
+
+@enduml

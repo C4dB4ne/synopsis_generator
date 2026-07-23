@@ -1,0 +1,113 @@
+@startuml MCP_Memory_Persistence
+
+title MCP — сохранение генерации и долговременной памяти
+
+skinparam backgroundColor #FCFCFD
+skinparam shadowing false
+skinparam dpi 180
+skinparam DefaultFontName Arial
+skinparam DefaultFontSize 13
+skinparam TitleFontSize 18
+skinparam TitleFontColor #263B45
+
+skinparam sequence {
+    ArrowColor #647987
+    LifeLineBorderColor #71848F
+    LifeLineBackgroundColor #F6F9FA
+    ParticipantBorderColor #667B88
+    ParticipantFontColor #24343C
+}
+
+skinparam note {
+    BackgroundColor #F8FAF9
+    BorderColor #B8C9C5
+    FontColor #334A46
+}
+
+participant "persist_story\nLangGraph node" as Graph #DCE7EF
+participant "MCP Client" as Client #D4E4EB
+participant "save_synopsis" as SynopsisTool #D8DCEF
+participant "SynopsisService" as SynopsisService #CFDBE5
+participant "save_story_memory" as MemoryTool #C7E1DB
+participant "StoryService" as StoryService #BBDAD2
+database "PostgreSQL" as DB #C4DFD7
+
+Graph -> Client : get_mcp_tools_safely()
+Client --> Graph : список tools или []
+
+alt список tools пуст
+    note over Graph
+      persist_story возвращает:
+      story_memory_saved = false
+
+      Финальный статус остаётся
+      completed / completed_with_warnings.
+    end note
+
+else MCP tools получены
+
+    Graph -> Graph : find_mcp_tool(save_synopsis)\nfind_mcp_tool(save_story_memory)
+
+    opt save_synopsis найден
+
+        Graph -> SynopsisTool : metadata + final_text\nstory_id + thread_id
+        SynopsisTool -> SynopsisService : save_synopsis(...)
+        SynopsisService -> DB : INSERT synopsis_generations
+        DB --> SynopsisService : id + created_at
+
+        alt INSERT успешен
+            SynopsisService --> SynopsisTool : saved=true, synopsis_id
+            SynopsisTool --> Graph : synopsis_id
+        else ошибка
+            SynopsisService --> SynopsisTool : saved=false, error
+            SynopsisTool --> Graph : synopsis_id = null
+        end
+    end
+
+    note right of Graph
+      Если save_synopsis отсутствует
+      или завершился неуспешно,
+      synopsis_id остаётся null.
+    end note
+
+    opt story_id AND story_memory_ready AND save_story_memory найден
+
+        Graph -> MemoryTool : story_id + memory\nsource_generation_id=synopsis_id
+        MemoryTool -> StoryService : save_story_memory(...)
+
+        StoryService -> DB : SELECT memory_version\nFOR UPDATE
+        DB --> StoryService : current_version
+
+        StoryService -> StoryService : new_version = current_version + 1
+
+        StoryService -> DB : UPDATE story_projects\nmemory, memory_version, updated_at
+        StoryService -> DB : INSERT story_memory_versions\nstory_id, version, memory,\nsource_generation_id
+        StoryService -> DB : COMMIT
+
+        alt транзакция успешна
+            StoryService --> MemoryTool : saved=true, memory_version
+            MemoryTool --> Graph : story_memory_saved=true\nstory_memory_version
+        else ошибка
+            StoryService --> MemoryTool : saved=false, error
+            MemoryTool --> Graph : story_memory_saved=false
+        end
+    end
+end
+
+note over MemoryTool,DB
+  source_generation_id допускает null.
+  Поэтому новая версия памяти может
+  сохраниться даже при неуспешном
+  save_synopsis.
+end note
+
+legend right
+|= Цвет |= Назначение |
+|<#DCE7EF>| LangGraph |
+|<#D4E4EB>| MCP Client |
+|<#D8DCEF>| Synopsis persistence |
+|<#C7E1DB>| Story memory persistence |
+|<#C4DFD7>| PostgreSQL |
+endlegend
+
+@enduml
