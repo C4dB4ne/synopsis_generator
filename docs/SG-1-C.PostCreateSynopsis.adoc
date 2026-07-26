@@ -83,7 +83,7 @@ include::.{document-diagrams-puml-name}.activity.puml[]
 === A1 Создание thread и начального SynopsisState
 API создает `thread_id = uuid4()` и формирует начальный `SynopsisState`.
 
-В state записываются `story_id`, исходный и последний пользовательский запрос, явно переданные требования, лимиты `max_revisions` и `max_clarifications`, а также начальные значения памяти.
+В state записываются `story_id`, исходный и последний пользовательский запрос + явно переданные требования, лимиты `max_revisions` и `max_clarifications`, а также начальные значения памяти.
 
 `thread_id` передается LangGraph в `configurable.thread_id` и используется PostgreSQL checkpointer для сохранения и восстановления состояния workflow.
 
@@ -329,7 +329,7 @@ HTTP 200 OK
   "critique_issues": [],
   "revision_count": 0,
   "clarification_count": 0,
-  "clarification_message": "Уточните жанр, стилистику, язык и требуемый объём."
+  "clarification_message": "Уточните жанр, стилистику, язык и требуемый объем."
 }
 ----
 

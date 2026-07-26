@@ -1,4 +1,5 @@
-@startuml
+@startuml Synopsis MCP Server - Взаимодействие
+
 title Synopsis MCP Server - Взаимодействие
 start
 

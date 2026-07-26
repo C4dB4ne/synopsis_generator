@@ -1,4 +1,5 @@
-@startuml
+@startuml Synopsis Generator - Компоненты
+
 title Synopsis Generator - Компоненты
 skinparam packageStyle rectangle
 skinparam linetype ortho

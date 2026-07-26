@@ -110,7 +110,7 @@ Content-Type: application/json
 
 {
   "thread_id": "8cf2c3f5-7ec8-40a5-bf6d-5f404e0e9134",
-  "message": "Жанр: триллер, стилистика: мрачная, язык: русский, объём: 5 абзацев"
+  "message": "Жанр: триллер, стилистика: мрачная, язык: русский, объем: 5 абзацев"
 }
 ----
 
@@ -150,6 +150,6 @@ HTTP 200 OK
   "interrupted": true,
   "status": "needs_clarification",
   "clarification_count": 1,
-  "clarification_message": "Уточните требуемый объём текста."
+  "clarification_message": "Уточните требуемый объем текста."
 }
 ----

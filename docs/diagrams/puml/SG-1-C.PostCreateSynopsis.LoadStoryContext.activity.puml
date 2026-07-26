@@ -1,4 +1,5 @@
-@startuml
+@startuml A2 load_story_context - Загрузка долговременного контекста
+
 title A2 load_story_context - Загрузка долговременного контекста
 start
 

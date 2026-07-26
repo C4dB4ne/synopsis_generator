@@ -1,4 +1,5 @@
-@startuml
+@startuml GET /health/dependencies - Проверить Ollama и PostgreSQL
+
 title GET /health/dependencies - Проверить Ollama и PostgreSQL
 start
 

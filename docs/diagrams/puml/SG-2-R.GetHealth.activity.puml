@@ -1,4 +1,5 @@
-@startuml
+@startuml GET /health - Проверить доступность API
+
 title GET /health - Проверить доступность API
 start
 

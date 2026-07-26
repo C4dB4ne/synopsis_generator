@@ -1,4 +1,5 @@
-@startuml
+@startuml POST /api/v1/synopsis/resume - Продолжить HITL workflow
+
 title POST /api/v1/synopsis/resume - Продолжить HITL workflow
 start
 

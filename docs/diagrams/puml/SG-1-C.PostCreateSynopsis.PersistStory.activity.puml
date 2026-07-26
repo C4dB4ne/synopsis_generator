@@ -1,4 +1,5 @@
-@startuml
+@startuml A11 persist_story - Сохранение generation и StoryMemory
+
 title A11 persist_story - Сохранение generation и StoryMemory
 start
 

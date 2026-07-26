@@ -1,68 +1,127 @@
-@startuml
+@startuml POST /api/v1/synopsis - Создать синопсис
+
 title POST /api/v1/synopsis - Создать синопсис
 start
 
 :Request;
-note: R1
+note
+    R1
+    Пользователь отправляет `SynopsisRequest`: текст запроса,
+    опциональный `story_id`, явные требования и лимиты.
+end note
 
 :**threadId** = uuid4();
-note: A1
+note
+    A1
+    API создает новый `thread_id = uuid4()` для отдельного запуска workflow.
+end note
 
-:Build initial **SynopsisState**\nand invoke LangGraph\nwith `configurable.thread_id` = **threadId**;
-note: A1
+:Формирует начальный **SynopsisState**\nи запускает LangGraph\nс `configurable.thread_id` = **threadId**;
 
 #palegreen :load_story_context;
-note: A2
+note
+    A2
+    Граф загружает StoryMemory по `story_id`; для новой истории
+    оставляет память пустой, а отсутствующий story возвращает как 404.
+end note
 
 #palegreen :collect_requirements;
-note: A3
+note
+    A3
+    LLM извлекает и объединяет `idea`, `genre`, `style`, `language`, `length`,
+    затем определяет недостающие и неоднозначные поля.
+end note
 
 if (**requirements_complete** = false) then (+)
     if (**clarification_count** >= **max_clarifications**) then (+)
         :clarification_limit_reached;
-        :Build response\nwith `status` = **clarification_limit_reached**;
+        :Возвращает \n `status` = **clarification_limit_reached**;
         note: R2
         :HTTP 200 OK;
         end
     else (-)
         #palegreen :request_clarification;
-        note: A4
+        note
+            A4
+            LLM формирует уточняющий вопрос по недостающим
+            и неоднозначным требованиям.
+        end note
         :wait_for_clarification\n`interrupt()`;\ncheckpoint thread state;
-        note: A4
-        :Build response\nwith `interrupted` = true,\n`status` = **needs_clarification**,\n`thread_id` = **threadId**;
-        note: R2
+        note
+            A4
+            `wait_for_clarification` вызывает `interrupt()`,
+            а checkpointer сохраняет состояние текущего `thread_id`.
+        end note
+        :Возвращает\n `interrupted` = true,\n`status` = **needs_clarification**,\n`thread_id` = **threadId**;
+        note
+            R2
+            API возвращает `needs_clarification`, текст вопроса
+            и `thread_id`, который понадобится для `/resume`.
+        end note
         :HTTP 200 OK;
         end
     endif
 endif
 
 #palegreen :ensure_story_project;
-note: A5
+note
+    A5
+    Для новой истории MCP tool `create_story` пытается создать постоянный `story_id`;
+    существующий `story_id` повторно не создается.
+end note
 
 :genre_router\nselect **selected_writer**;
-note: A6
+note
+    A6
+    `genre_router` выбирает Writer по ключевым словам жанра;
+    при отсутствии совпадения используется `universal_writer`.
+end note
 
 repeat
     #palegreen :selected Writer\ncreate/revise **draft**;
-    note: A7
+    note
+        A7
+        Выбранный Writer создает `draft`, а при повторной итерации
+        перерабатывает его по `revision_instructions`.
+    end note
 
     #palegreen :critic\n-> structured CritiqueResult;
-    note: A8
+    note
+        A8
+        Critic оценивает только текущий `draft`; текст принят, когда
+        `must_revise = false` и `score >= 8`, иначе возможна ревизия.
+    end note
 
 repeat while (**critique_passed** = false\nAND **revision_count** < **max_revisions**) is (+)
--> (-)
+-> (-);
 
 #palegreen :language_editor\n-> **final_text**;
-note: A9
+note
+    A9
+    Language Editor исправляет язык и читаемость, не меняя сюжет,
+    и формирует итоговый `final_text`.
+end note
 
 #palegreen :memory_manager\n-> new StoryMemory snapshot;
-note: A10
+note
+    A10
+    Memory Manager строит новый полный StoryMemory snapshot;
+    при ошибке предыдущая память не перезаписывается.
+end note
 
 #palegreen :persist_story\nvia MCP tools;
-note: A11
+note
+    A11
+    `persist_story` пытается сохранить generation и, если память готова,
+    новую версию StoryMemory через MCP tools.
+end note
 
 :Build response;
-note: R2
+note
+    R2
+    API формирует `SynopsisResponse` с результатом генерации,
+    идентификаторами, статусом, критикой и счетчиками.
+end note
 
 :HTTP 200 OK;
 end

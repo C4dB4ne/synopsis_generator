@@ -1,4 +1,5 @@
-@startuml
+@startuml T5 save_story_memory - Атомарное сохранение версии памяти
+
 title T5 save_story_memory - Атомарное сохранение версии памяти
 start
 
