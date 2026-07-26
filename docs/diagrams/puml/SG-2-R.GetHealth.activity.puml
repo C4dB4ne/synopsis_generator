@@ -1,0 +1,14 @@
+@startuml
+title GET /health - Проверить доступность API
+start
+
+:Request;
+note: R1
+
+:Build response\nwith `status` = "ok"\nand `app` = **APP_NAME**;
+note: R2
+
+:HTTP 200 OK;
+end
+
+@enduml

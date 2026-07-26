@@ -1,0 +1,216 @@
+:document-name: SG.domain
+:diagrams-directory: /diagrams
+:diagrams-puml-directory: {diagrams-directory}/puml
+:diagrams-mmd-directory: {diagrams-directory}/mmd
+:document-diagrams-puml-name: {diagrams-puml-directory}/{document-name}
+:document-diagrams-mmd-name: {diagrams-mmd-directory}/{document-name}
+
+:toc: macro
+:sectnums:
+
+= Домен Synopsis Generator
+
+[.text-right]
+{document-name}.adoc
+
+toc::[]
+
+== Описание домена
+Предметная модель Synopsis Generator разделяет литературный проект, конкретную generation и версию долговременной памяти.
+
+Основной агрегат — `StoryProject`.
+
+- `StoryProject` хранит постоянные параметры произведения и актуальный StoryMemory snapshot.
+- `SynopsisGeneration` хранит результат одного завершенного workflow.
+- `StoryMemoryVersion` хранит immutable snapshot памяти после конкретного этапа развития истории.
+
+LangGraph `thread_id` является техническим идентификатором workflow и не является primary key предметной сущности. Checkpoint-таблицы создаются и обслуживаются библиотекой `AsyncPostgresSaver`.
+
+[plantuml]
+----
+@startuml Концептуальная модель Synopsis Generator
+
+skinparam packageStyle rectangle
+
+package "Synopsis Generator Domain" as SG {
+  entity "StoryProject" as Story <<Aggregate Root>> {
+  }
+
+  entity "SynopsisGeneration" as Generation <<Entity>> {
+  }
+
+  entity "StoryMemoryVersion" as MemoryVersion <<Entity>> {
+  }
+}
+
+package "LangGraph Persistence" as LG {
+  entity "Thread Checkpoint" as Checkpoint <<Technical>> {
+  }
+}
+
+Story "1" -right-> "0..*" Generation : содержит
+Story "1" -down-> "0..*" MemoryVersion : версии памяти
+Generation ..> MemoryVersion : source_generation_id\n(nullable)
+Checkpoint ..> Generation : thread_id\n(без FK)
+
+@enduml
+----
+
+== Описание сущностей
+
+=== Логическая схема
+[plantuml]
+----
+@startuml Логическая модель Synopsis Generator
+
+entity "StoryProject" <<Aggregate Root>> {
+    * id : bigint
+    --
+    * title : text
+    * premise : text
+    * genre : text
+    * style : text
+    * language : text
+    * memory : jsonb
+    * memory_version : integer
+    * created_at : timestamptz
+    * updated_at : timestamptz
+}
+
+entity "SynopsisGeneration" <<Entity>> {
+    * id : bigint
+    --
+    story_id : bigint
+    thread_id : text
+    user_request : text
+    entry_summary : text
+    * idea : text
+    * genre : text
+    * style : text
+    * language : text
+    * requested_length : text
+    selected_writer : text
+    draft : text
+    final_text : text
+    critique_passed : boolean
+    critique_score : integer
+    * revision_count : integer
+    * created_at : timestamptz
+}
+
+entity "StoryMemoryVersion" <<Entity>> {
+    * id : bigint
+    --
+    * story_id : bigint
+    * version : integer
+    * memory : jsonb
+    source_generation_id : bigint
+    * created_at : timestamptz
+}
+
+StoryProject "1" -- "0..*" SynopsisGeneration
+StoryProject "1" -- "0..*" StoryMemoryVersion
+SynopsisGeneration "0..1" .. "0..*" StoryMemoryVersion : source_generation_id
+
+@enduml
+----
+
+=== Физическая схема
+[plantuml]
+----
+@startuml
+skinparam linetype ortho
+
+entity "story_projects" {
+    * id : bigint <<PK>>
+    --
+    * title : text
+    * premise : text
+    * genre : text
+    * style : text
+    * language : text
+    * memory : jsonb = {}
+    * memory_version : integer = 0
+    * created_at : timestamptz = now()
+    * updated_at : timestamptz = now()
+}
+
+entity "synopsis_generations" {
+    * id : bigint <<PK>>
+    --
+    story_id : bigint <<FK, nullable>>
+    thread_id : text <<nullable>>
+    user_request : text <<nullable>>
+    entry_summary : text <<nullable>>
+    * idea : text
+    * genre : text
+    * style : text
+    * language : text
+    * requested_length : text
+    selected_writer : text <<nullable>>
+    draft : text <<nullable>>
+    final_text : text <<nullable>>
+    critique_passed : boolean <<nullable>>
+    critique_score : integer <<nullable>>
+    * revision_count : integer = 0
+    * created_at : timestamptz = now()
+}
+
+entity "story_memory_versions" {
+    * id : bigint <<PK>>
+    --
+    * story_id : bigint <<FK>>
+    * version : integer <<UX_story_version>>
+    * memory : jsonb
+    source_generation_id : bigint <<FK, nullable>>
+    * created_at : timestamptz = now()
+}
+
+story_projects ||--o{ synopsis_generations : story_id\nON DELETE SET NULL
+story_projects ||--o{ story_memory_versions : story_id\nON DELETE CASCADE
+synopsis_generations |o..o{ story_memory_versions : source_generation_id\nON DELETE SET NULL
+
+note bottom of story_memory_versions
+    **Ограничения:**
+    - UX_story_version: UNIQUE (story_id, version)
+    - version увеличивается последовательно
+      внутри транзакции после SELECT ... FOR UPDATE
+end note
+
+legend right
+  | Обозначение | Тип |
+  | <<PK>> | Первичный ключ |
+  | <<FK>> | Внешний ключ |
+  | <<UX_*>> | Уникальное ограничение |
+  | * | Обязательный атрибут |
+  | <<nullable>> | Nullable атрибут |
+end legend
+
+@enduml
+----
+
+== StoryMemory
+Поле `story_projects.memory` и `story_memory_versions.memory` содержит JSONB в формате `StoryMemory`.
+
+[width="100%", cols="1, 5, 3, 1, 6"]
+|===
+|# |Parameter |Type |Required |Description
+|{counter:M1} |`summary` |`string` |+ |Краткое каноническое состояние истории
+|{counter:M1} |`characters` |`array of object` |+ |Персонажи
+|{counter:M1} |`characters.name` |`string` |+ |Имя персонажа
+|{counter:M1} |`characters.role` |`string` |+ |Роль
+|{counter:M1} |`characters.current_state` |`string` |+ |Текущее состояние
+|{counter:M1} |`characters.goals` |`array of string` |+ |Цели
+|{counter:M1} |`world_facts` |`array of string` |+ |Факты мира
+|{counter:M1} |`locations` |`array of string` |+ |Локации
+|{counter:M1} |`unresolved_threads` |`array of string` |+ |Незавершенные сюжетные линии
+|{counter:M1} |`latest_events` |`array of string` |+ |Последние события
+|{counter:M1} |`style_rules` |`array of string` |+ |Правила стилистической последовательности
+|===
+
+== LangGraph checkpoint tables
+`AsyncPostgresSaver.setup()` создает собственные технические таблицы checkpoint.
+
+Эти таблицы находятся в той же PostgreSQL БД, но не относятся к предметной metadata Synopsis Generator и не управляются Alembic-миграциями проекта.
+
+Их назначение — сохранение state одного `thread_id` и возобновление Human-in-the-Loop workflow через `Command(resume=...)`.

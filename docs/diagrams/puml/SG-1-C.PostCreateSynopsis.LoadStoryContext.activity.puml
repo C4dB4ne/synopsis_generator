@@ -1,0 +1,38 @@
+@startuml
+title A2 load_story_context - Загрузка долговременного контекста
+start
+
+if (**story_id** exists) then (+)
+
+    #palegreen :get MCP tools\nusing MultiServerMCPClient;
+
+    if (`get_story_context` available) then (+)
+
+        #palegreen :retrieve story context\nby MCP tool `get_story_context`\nwith: `story_id` = **story_id**;
+
+        if (`found` = true) then (+)
+            :Update SynopsisState\nwith **story_title**, **idea**, **genre**,\n**style**, **language**, **story_memory**,\n**story_memory_version**;
+            :`story_context_loaded` = true;
+        else (-)
+            if (`error` exists) then (+)
+                :Use empty memory\nand `status` = **story_context_unavailable**;
+            else (-)
+                :Raise ValueError\n"Story {story_id} was not found";
+                :HTTP 404 Not Found;
+                end
+            endif
+        endif
+
+    else (-)
+        :Use empty memory\nand `status` = **story_context_unavailable**;
+    endif
+
+else (-)
+    :**story_memory** = {};
+    :**story_memory_version** = 0;
+    :`story_context_loaded` = false;
+endif
+
+end
+
+@enduml

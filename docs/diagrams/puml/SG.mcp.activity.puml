@@ -1,0 +1,37 @@
+@startuml
+title Synopsis MCP Server - Взаимодействие
+start
+
+:LangGraph node requests MCP tools;
+
+#palegreen :Create MultiServerMCPClient\nwith server entry `synopsis`;
+
+#palegreen :GET available tools\nfrom MCP Server\nwith configured timeout;
+
+if (connection successful?) then (+)
+
+    :Find required tool\nin already loaded list;
+
+    #palegreen :Invoke FastMCP Tool;
+
+    :Resolve Service\nusing Depends(...);
+
+    if (operation type?) then (DB)
+        #palegreen :Execute PostgreSQL operation\nusing psycopg;
+    else (Health)
+        #palegreen :Execute HTTP/DB health check;
+    endif
+
+    :Return Pydantic result;
+
+else (-)
+    :Return empty tool list [];
+    note
+        Graph can continue without MCP tools.
+        Domain persistence becomes unavailable.
+    end note
+endif
+
+end
+
+@enduml

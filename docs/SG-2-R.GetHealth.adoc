@@ -1,0 +1,62 @@
+:document-name: SG-2-R.GetHealth
+:diagrams-directory: /diagrams
+:diagrams-puml-directory: {diagrams-directory}/puml
+:document-diagrams-puml-name: {diagrams-puml-directory}/{document-name}
+
+:toc: macro
+:sectnums:
+
+= GET /health - Проверить доступность API
+
+[.text-right]
+{document-name}.adoc
+
+toc::[]
+
+== Описание
+Метод `GET /health` проверяет, что FastAPI-приложение запущено и может обработать HTTP-запрос.
+
+Метод не выполняет проверку Ollama, PostgreSQL или MCP Server.
+
+Для проверки прямых зависимостей API используется link:SG-2-R.GetHealthDependencies.adoc[].
+
+== Диаграмма активности
+.{document-diagrams-puml-name}.activity.puml
+[plantuml]
+----
+include::.{document-diagrams-puml-name}.activity.puml[]
+----
+
+== Описание алгоритма
+
+=== R1 Request
+Параметры отсутствуют.
+
+=== R2 Response
+[width="100%", cols="1, 5, 3, 1, 5, 5"]
+|===
+|# |Parameter |Type |Required |Description |Comment
+6+^|Body
+|{counter:R2} |`status` |`string` |+ |Статус API |`ok`
+|{counter:R2} |`app` |`string` |+ |Название приложения |По умолчанию `Synopsis Generator`
+|===
+
+== Примеры
+
+=== Успешный запрос
+.Request
+[source]
+----
+GET /health
+----
+
+.Response
+[source]
+----
+HTTP 200 OK
+
+{
+  "status": "ok",
+  "app": "Synopsis Generator"
+}
+----

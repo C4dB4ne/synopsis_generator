@@ -1,0 +1,27 @@
+@startuml
+title A7-A8 Writer-Critic revision cycle
+start
+
+repeat
+
+    #palegreen :selected Writer\nusing `temperature = 0.6`\ncreates current **draft**;
+    note: A7
+
+    if (revision?) then (+)
+        :Use current **draft**\nand **revision_instructions**;
+        :**revision_count** = **revision_count** + 1;
+    endif
+
+    #palegreen :Critic\nusing structured **CritiqueResult**;
+    note: A8
+
+    :**critique_passed** =\n(`must_revise` = false\nAND `score` >= 8);
+
+repeat while (**critique_passed** = false\nAND **revision_count** < **max_revisions**) is (+)
+-> (-)
+
+:Continue to Language Editor;
+
+end
+
+@enduml

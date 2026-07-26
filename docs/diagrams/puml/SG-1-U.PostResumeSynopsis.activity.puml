@@ -1,0 +1,54 @@
+@startuml
+title POST /api/v1/synopsis/resume - Продолжить HITL workflow
+start
+
+:Request;
+note: R1
+
+:**threadId** = Request.Body.thread_id;
+:**message** = Request.Body.message;
+
+:Invoke LangGraph\nwith `Command(resume = message)`\nand `configurable.thread_id` = **threadId**;
+note: A1
+
+#palegreen :Restore checkpoint\nfor **threadId**\nusing AsyncPostgresSaver;
+note: A1
+
+:Restart `wait_for_clarification`\nfrom node beginning;
+
+:`interrupt(...)` returns\n**message** as resume value;
+note: A2
+
+:**latest_user_message** = **message**;
+:**clarification_count** = **clarification_count** + 1;
+
+#palegreen :collect_requirements;
+note: A3
+
+if (**requirements_complete** = false) then (+)
+
+    if (**clarification_count** >= **max_clarifications**) then (+)
+        :clarification_limit_reached;
+        :Build response;
+        note: R2
+        :HTTP 200 OK;
+        end
+    else (-)
+        #palegreen :request_clarification;
+        :wait_for_clarification\n`interrupt()` again;
+        :Build response\nwith `status` = **needs_clarification**;
+        note: R2
+        :HTTP 200 OK;
+        end
+    endif
+
+else (-)
+    #palegreen :Continue workflow\nA5-A11 from\nSG-1-C.PostCreateSynopsis;
+    note: A4
+    :Build response;
+    note: R2
+    :HTTP 200 OK;
+    end
+endif
+
+@enduml

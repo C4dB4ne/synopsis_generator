@@ -1,0 +1,46 @@
+@startuml
+title A3-A4 Анализ требований и Human-in-the-Loop
+start
+
+#palegreen :analyze requirements\nusing Ollama structured output\n**RequirementsAnalysis**;
+note: A3
+
+:Merge LLM values\nwith current SynopsisState;
+
+:Recalculate **missing_fields**,\n**ambiguous_fields**,\n**requirements_complete**;
+
+if (LLM/structured output failed?) then (+)
+    :Deterministic fallback:\ncheck required fields\n`idea, genre, style, language, length`;
+endif
+
+if (**requirements_complete**) then (+)
+    :Continue to A5;
+    end
+else (-)
+    if (**clarification_count** >= **max_clarifications**) then (+)
+        :clarification_limit_reached;
+        end
+    else (-)
+        #palegreen :build clarification message\nusing Ollama structured output\n**ClarificationRequest**;
+        note: A4
+
+        if (clarification LLM failed?) then (+)
+            :Build deterministic\nclarification message;
+        endif
+
+        :wait_for_clarification\n`interrupt(payload)`;
+        note
+            Payload contains:
+            message,
+            missing_fields,
+            ambiguous_fields,
+            attempt,
+            max_attempts
+        end note
+
+        :Return HTTP response\n`status` = needs_clarification\nwith **thread_id**;
+        end
+    endif
+endif
+
+@enduml

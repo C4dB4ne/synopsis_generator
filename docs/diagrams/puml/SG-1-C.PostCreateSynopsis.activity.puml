@@ -1,0 +1,70 @@
+@startuml
+title POST /api/v1/synopsis - Создать синопсис
+start
+
+:Request;
+note: R1
+
+:**threadId** = uuid4();
+note: A1
+
+:Build initial **SynopsisState**\nand invoke LangGraph\nwith `configurable.thread_id` = **threadId**;
+note: A1
+
+#palegreen :load_story_context;
+note: A2
+
+#palegreen :collect_requirements;
+note: A3
+
+if (**requirements_complete** = false) then (+)
+    if (**clarification_count** >= **max_clarifications**) then (+)
+        :clarification_limit_reached;
+        :Build response\nwith `status` = **clarification_limit_reached**;
+        note: R2
+        :HTTP 200 OK;
+        end
+    else (-)
+        #palegreen :request_clarification;
+        note: A4
+        :wait_for_clarification\n`interrupt()`;\ncheckpoint thread state;
+        note: A4
+        :Build response\nwith `interrupted` = true,\n`status` = **needs_clarification**,\n`thread_id` = **threadId**;
+        note: R2
+        :HTTP 200 OK;
+        end
+    endif
+endif
+
+#palegreen :ensure_story_project;
+note: A5
+
+:genre_router\nselect **selected_writer**;
+note: A6
+
+repeat
+    #palegreen :selected Writer\ncreate/revise **draft**;
+    note: A7
+
+    #palegreen :critic\n-> structured CritiqueResult;
+    note: A8
+
+repeat while (**critique_passed** = false\nAND **revision_count** < **max_revisions**) is (+)
+-> (-)
+
+#palegreen :language_editor\n-> **final_text**;
+note: A9
+
+#palegreen :memory_manager\n-> new StoryMemory snapshot;
+note: A10
+
+#palegreen :persist_story\nvia MCP tools;
+note: A11
+
+:Build response;
+note: R2
+
+:HTTP 200 OK;
+end
+
+@enduml

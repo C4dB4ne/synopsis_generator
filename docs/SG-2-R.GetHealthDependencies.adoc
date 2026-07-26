@@ -1,0 +1,115 @@
+:document-name: SG-2-R.GetHealthDependencies
+:diagrams-directory: /diagrams
+:diagrams-puml-directory: {diagrams-directory}/puml
+:document-diagrams-puml-name: {diagrams-puml-directory}/{document-name}
+
+:toc: macro
+:sectnums:
+
+= GET /health/dependencies - Проверить Ollama и PostgreSQL
+
+[.text-right]
+{document-name}.adoc
+
+toc::[]
+
+== Описание
+Метод `GET /health/dependencies` проверяет прямые инфраструктурные зависимости FastAPI-приложения:
+
+- Ollama;
+- PostgreSQL.
+
+Проверка выполняется последовательно. При ошибке любой зависимости API возвращает `HTTP 503 Service Unavailable`.
+
+**ПРИМЕЧАНИЕ**: MCP Server этим endpoint не проверяется. MCP подключается во время выполнения workflow через `get_mcp_tools_safely`.
+
+**ПРИМЕЧАНИЕ**: Проверка Ollama вызывает `/api/version` и подтверждает доступность сервиса, но не проверяет наличие модели из `LLM_MODEL`.
+
+== Диаграмма активности
+.{document-diagrams-puml-name}.activity.puml
+[plantuml]
+----
+include::.{document-diagrams-puml-name}.activity.puml[]
+----
+
+== Описание алгоритма
+
+=== R1 Request
+Параметры отсутствуют.
+
+=== R2 Response
+[width="100%", cols="1, 5, 3, 1, 5, 5"]
+|===
+|# |Parameter |Type |Required |Description |Comment
+6+^|Body
+|{counter:R2} |`ollama` |`object` |+ |Результат проверки Ollama |
+|{counter:R2} |`ollama.status` |`string` |+ |Статус |`ok`
+|{counter:R2} |`ollama.version` |`string\|null` |+ |Версия Ollama |
+|{counter:R2} |`ollama.model` |`string` |+ |Настроенное значение `LLM_MODEL` |Не подтверждает, что модель загружена
+|{counter:R2} |`postgres` |`object` |+ |Результат проверки PostgreSQL |
+|{counter:R2} |`postgres.status` |`string` |+ |Статус |`ok`
+|{counter:R2} |`postgres.database` |`string` |+ |Текущая БД |
+|{counter:R2} |`postgres.user` |`string` |+ |Текущая роль PostgreSQL |
+|===
+
+[[A1]]
+=== A1 Проверка Ollama
+Выполняется HTTP-запрос:
+
+[source]
+----
+GET {OLLAMA_BASE_URL}/api/version
+timeout = 5s
+----
+
+При ошибке возвращается `HTTP 503` с `detail = "Ollama unavailable: ..."`.
+
+[[A2]]
+=== A2 Проверка PostgreSQL
+Выполняется подключение по `DATABASE_URL` и SQL:
+
+[source,sql]
+----
+SELECT current_database(), current_user
+----
+
+При ошибке возвращается `HTTP 503` с `detail = "PostgreSQL unavailable: ..."`.
+
+== Примеры
+
+=== Все зависимости доступны
+.Request
+[source]
+----
+GET /health/dependencies
+----
+
+.Response
+[source]
+----
+HTTP 200 OK
+
+{
+  "ollama": {
+    "status": "ok",
+    "version": "0.x.x",
+    "model": "qwen3:8b"
+  },
+  "postgres": {
+    "status": "ok",
+    "database": "synopsis_agent",
+    "user": "synopsis"
+  }
+}
+----
+
+=== Ollama недоступен
+.Response
+[source]
+----
+HTTP 503 Service Unavailable
+
+{
+  "detail": "Ollama unavailable: ..."
+}
+----

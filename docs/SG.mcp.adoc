@@ -1,0 +1,192 @@
+:document-name: SG.mcp
+:diagrams-directory: /diagrams
+:diagrams-puml-directory: {diagrams-directory}/puml
+:document-diagrams-puml-name: {diagrams-puml-directory}/{document-name}
+
+:toc: macro
+:sectnums:
+
+= Synopsis MCP Server - Описание инструментов
+
+[.text-right]
+{document-name}.adoc
+
+toc::[]
+
+== Описание
+Synopsis MCP Server реализован на `FastMCP`, запускается отдельным контейнером и слушает HTTP на `0.0.0.0:8001`.
+
+На стороне FastAPI используется `langchain-mcp-adapters` / `MultiServerMCPClient`.
+
+Текущая конфигурация содержит один MCP server entry:
+
+[source]
+----
+synopsis -> MCP_SERVER_URL
+----
+
+MCP tools загружаются во время выполнения workflow. `get_mcp_tools_safely()` ограничивает подключение `MCP_CONNECT_TIMEOUT_SECONDS`; при timeout или ошибке возвращается пустой список.
+
+== Диаграмма взаимодействия
+.{document-diagrams-puml-name}.activity.puml
+[plantuml]
+----
+include::.{document-diagrams-puml-name}.activity.puml[]
+----
+
+== Архитектура tool
+Tool functions используют dependency injection через `Depends(get_*_service)`.
+
+Основная цепочка:
+
+[source]
+----
+LangGraph Node -> MCP Client -> FastMCP Tool -> Service -> PostgreSQL / HTTP
+----
+
+Tool не содержит SQL-логику предметной операции; работа с PostgreSQL и внешними HTTP endpoints вынесена в service layer.
+
+== Описание инструментов
+
+[[T1]]
+=== T1 check_service
+Проверяет доступность одного инфраструктурного сервиса.
+
+==== T1.R1 Input
+[width="100%", cols="1, 5, 3, 1, 5, 5"]
+|===
+|# |Parameter |Type |Required |Description |Comment
+|{counter:T1.R1} |`target` |`enum` |+ |Проверяемый сервис |`api`, `ollama`, `postgres`
+|===
+
+==== T1.R2 Output
+[width="100%", cols="1, 5, 3, 1, 5, 5"]
+|===
+|# |Parameter |Type |Required |Description |Comment
+|{counter:T1.R2} |`service` |`enum` |+ |Проверенный сервис |
+|{counter:T1.R2} |`status` |`enum` |+ |Статус |`ok`, `unavailable`
+|{counter:T1.R2} |`latency_ms` |`number` |+ |Время проверки в миллисекундах |`>= 0`
+|{counter:T1.R2} |`details` |`object\|null` |+ |Диагностические данные |
+|{counter:T1.R2} |`error` |`string\|null` |+ |Текст ошибки |
+|===
+
+[[T2]]
+=== T2 save_synopsis
+Сохраняет готовый результат generation в `synopsis_generations`.
+
+==== T2.R1 Input
+[width="100%", cols="1, 5, 3, 1, 5, 5"]
+|===
+|# |Parameter |Type |Required |Description |Comment
+|{counter:T2.R1} |`idea` |`string` |+ |Идея произведения |`not-empty`
+|{counter:T2.R1} |`genre` |`string` |+ |Жанр |`not-empty`
+|{counter:T2.R1} |`style` |`string` |+ |Стилистика |
+|{counter:T2.R1} |`language` |`string` |+ |Язык |
+|{counter:T2.R1} |`requested_length` |`string` |+ |Требование к объему |
+|{counter:T2.R1} |`final_text` |`string` |+ |Финальный синопсис |`not-empty`
+|{counter:T2.R1} |`selected_writer` |`string\|null` |- |Writer node |
+|{counter:T2.R1} |`draft` |`string\|null` |- |Последний draft |
+|{counter:T2.R1} |`critique_passed` |`boolean\|null` |- |Результат Critic |
+|{counter:T2.R1} |`critique_score` |`integer\|null` |- |Оценка Critic |`0..10`
+|{counter:T2.R1} |`revision_count` |`integer` |- |Количество ревизий |default: `0`
+|{counter:T2.R1} |`story_id` |`integer\|null` |- |История |`>= 1`
+|{counter:T2.R1} |`thread_id` |`string\|null` |- |LangGraph thread |
+|{counter:T2.R1} |`user_request` |`string\|null` |- |Исходный пользовательский запрос |
+|{counter:T2.R1} |`entry_summary` |`string\|null` |- |Краткое содержание generation |
+|===
+
+==== T2.R2 Output
+[width="100%", cols="1, 5, 3, 1, 5, 5"]
+|===
+|# |Parameter |Type |Required |Description |Comment
+|{counter:T2.R2} |`saved` |`boolean` |+ |Сохранена ли generation |
+|{counter:T2.R2} |`synopsis_id` |`integer\|null` |+ |ID сохраненной записи |
+|{counter:T2.R2} |`created_at` |`string\|null` |+ |Время создания |ISO 8601
+|{counter:T2.R2} |`error` |`string\|null` |+ |Текст ошибки |
+|===
+
+[[T3]]
+=== T3 create_story
+Создает новый Story Project.
+
+==== T3.R1 Input
+[width="100%", cols="1, 5, 3, 1, 5, 5"]
+|===
+|# |Parameter |Type |Required |Description |Comment
+|{counter:T3.R1} |`title` |`string` |+ |Название истории |`not-empty`
+|{counter:T3.R1} |`premise` |`string` |+ |Основная концепция |`not-empty`
+|{counter:T3.R1} |`genre` |`string` |+ |Жанр |`not-empty`
+|{counter:T3.R1} |`style` |`string` |+ |Стилистика |`not-empty`
+|{counter:T3.R1} |`language` |`string` |+ |Язык |`not-empty`
+|===
+
+==== T3.R2 Output
+[width="100%", cols="1, 5, 3, 1, 5, 5"]
+|===
+|# |Parameter |Type |Required |Description |Comment
+|{counter:T3.R2} |`created` |`boolean` |+ |Создана ли история |
+|{counter:T3.R2} |`story_id` |`integer\|null` |+ |ID истории |
+|{counter:T3.R2} |`created_at` |`string\|null` |+ |Время создания |
+|{counter:T3.R2} |`error` |`string\|null` |+ |Текст ошибки |
+|===
+
+[[T4]]
+=== T4 get_story_context
+Возвращает текущий Story Project и актуальный StoryMemory snapshot.
+
+==== T4.R1 Input
+[width="100%", cols="1, 5, 3, 1, 5, 5"]
+|===
+|# |Parameter |Type |Required |Description |Comment
+|{counter:T4.R1} |`story_id` |`integer` |+ |ID истории |`>= 1`
+|===
+
+==== T4.R2 Output
+[width="100%", cols="1, 5, 3, 1, 5, 5"]
+|===
+|# |Parameter |Type |Required |Description |Comment
+|{counter:T4.R2} |`found` |`boolean` |+ |Найдена ли история |
+|{counter:T4.R2} |`story_id` |`integer\|null` |+ |ID истории |
+|{counter:T4.R2} |`title` |`string\|null` |+ |Название |
+|{counter:T4.R2} |`premise` |`string\|null` |+ |Концепция |
+|{counter:T4.R2} |`genre` |`string\|null` |+ |Жанр |
+|{counter:T4.R2} |`style` |`string\|null` |+ |Стилистика |
+|{counter:T4.R2} |`language` |`string\|null` |+ |Язык |
+|{counter:T4.R2} |`memory` |`object` |+ |Текущий StoryMemory snapshot |
+|{counter:T4.R2} |`memory_version` |`integer` |+ |Версия памяти |`>= 0`
+|{counter:T4.R2} |`created_at` |`string\|null` |+ |Время создания |
+|{counter:T4.R2} |`updated_at` |`string\|null` |+ |Время обновления |
+|{counter:T4.R2} |`error` |`string\|null` |+ |Текст технической ошибки |
+|===
+
+[[T5]]
+=== T5 save_story_memory
+Атомарно сохраняет новый полный StoryMemory snapshot.
+
+Tool не выполняет merge самостоятельно. Переданный `memory` считается новым каноническим snapshot.
+
+==== T5.R1 Input
+[width="100%", cols="1, 5, 3, 1, 5, 5"]
+|===
+|# |Parameter |Type |Required |Description |Comment
+|{counter:T5.R1} |`story_id` |`integer` |+ |ID истории |`>= 1`
+|{counter:T5.R1} |`memory` |`object` |+ |Новый полный StoryMemory snapshot |
+|{counter:T5.R1} |`source_generation_id` |`integer\|null` |- |Generation, на основании которой создана память |Может быть `null`
+|===
+
+==== T5.R2 Output
+[width="100%", cols="1, 5, 3, 1, 5, 5"]
+|===
+|# |Parameter |Type |Required |Description |Comment
+|{counter:T5.R2} |`saved` |`boolean` |+ |Сохранена ли новая версия |
+|{counter:T5.R2} |`story_id` |`integer\|null` |+ |ID истории |
+|{counter:T5.R2} |`memory_version` |`integer\|null` |+ |Номер новой версии |
+|{counter:T5.R2} |`updated_at` |`string\|null` |+ |Время обновления |
+|{counter:T5.R2} |`error` |`string\|null` |+ |Текст ошибки |
+|===
+
+.{document-diagrams-puml-name}.SaveStoryMemory.activity.puml
+[plantuml]
+----
+include::.{document-diagrams-puml-name}.SaveStoryMemory.activity.puml[]
+----

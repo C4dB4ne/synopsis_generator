@@ -1,0 +1,397 @@
+:document-name: SG-1-C.PostCreateSynopsis
+:diagrams-directory: /diagrams
+:diagrams-puml-directory: {diagrams-directory}/puml
+:document-diagrams-puml-name: {diagrams-puml-directory}/{document-name}
+
+:toc: macro
+:sectnums:
+
+= POST /api/v1/synopsis - Создать синопсис
+
+[.text-right]
+{document-name}.adoc
+
+toc::[]
+
+== Описание
+Метод `POST /api/v1/synopsis` запускает новый LangGraph workflow генерации художественного синопсиса.
+
+Пользователь передает свободное описание результата в `message`. Параметры `idea`, `genre`, `style`, `language`, `length` могут быть переданы явно либо извлечены LLM в узле `collect_requirements`.
+
+Для каждого запроса создается новый `thread_id`. Если передан существующий `story_id`, перед анализом требований система пытается загрузить долговременную память произведения через MCP tool `get_story_context`.
+
+Если требований недостаточно, workflow приостанавливается через `interrupt()` и возвращает `status = needs_clarification`. Продолжение такого workflow выполняется методом link:SG-1-U.PostResumeSynopsis.adoc[] с тем же `thread_id`.
+
+Если требования полны, граф выбирает Writer, выполняет цикл Writer -> Critic, языковую редактуру, обновляет StoryMemory и пытается сохранить результат через MCP.
+
+**ПРИМЕЧАНИЕ**: Новый литературный сезон/главу существующей истории следует запускать новым `POST /api/v1/synopsis` с тем же `story_id`. Endpoint `/resume` предназначен только для продолжения прерванного Human-in-the-Loop workflow.
+
+link:https://github.com/C4dB4ne/synopsis_generator[] - исходный код Synopsis Generator
+
+== Доступные роли
+Аутентификация и пользовательские роли в текущей версии не реализованы.
+
+== Диаграмма активности
+.{document-diagrams-puml-name}.activity.puml
+[plantuml]
+----
+include::.{document-diagrams-puml-name}.activity.puml[]
+----
+
+== Описание алгоритма
+
+=== R1 Request
+[width="100%", cols="1, 5, 3, 1, 5, 5"]
+|===
+|# |Parameter |Type |Required |Description |Comment
+6+^|Body
+|{counter:R1} |`story_id` |`integer\|null` |- |Идентификатор существующей истории |`>= 1`; не передавать для новой истории
+|{counter:R1} |`message` |`string` |+ |Свободное описание требуемого результата |`not-empty`
+|{counter:R1} |`idea` |`string\|null` |- |Основная идея произведения |Может быть извлечена из `message`
+|{counter:R1} |`genre` |`string\|null` |- |Жанр |Может быть извлечен из `message`
+|{counter:R1} |`style` |`string\|null` |- |Художественная стилистика |Может быть извлечена из `message`
+|{counter:R1} |`language` |`string\|null` |- |Язык итогового текста |Может быть извлечен из `message`
+|{counter:R1} |`length` |`string\|null` |- |Требование к объему |Например, `5 абзацев`
+|{counter:R1} |`max_revisions` |`integer` |- |Максимальное число доработок Writer |default: `3`; `0..10`
+|{counter:R1} |`max_clarifications` |`integer` |- |Максимальное число HITL-уточнений |default: `3`; `1..10`
+|===
+
+=== R2 Response
+[width="100%", cols="1, 5, 3, 1, 5, 5"]
+|===
+|# |Parameter |Type |Required |Description |Comment
+6+^|Body
+|{counter:R2} |`story_id` |`integer\|null` |+ |Идентификатор литературного проекта |Может быть `null`, если MCP недоступен
+|{counter:R2} |`synopsis_id` |`integer\|null` |+ |Идентификатор сохраненной генерации |Заполняется при успешном `save_synopsis`
+|{counter:R2} |`story_memory_version` |`integer` |+ |Текущая версия долговременной памяти |Начальное значение `0`
+|{counter:R2} |`story_memory_saved` |`boolean` |+ |Сохранена ли новая версия StoryMemory |
+|{counter:R2} |`thread_id` |`string` |+ |Идентификатор LangGraph thread |UUID для нового workflow
+|{counter:R2} |`interrupted` |`boolean` |+ |Приостановлен ли workflow через `interrupt()` |
+|{counter:R2} |`status` |`string` |+ |Статус выполнения |Основные значения: `needs_clarification`, `clarification_limit_reached`, `completed`, `completed_with_warnings`
+|{counter:R2} |`selected_writer` |`string\|null` |+ |Выбранный Writer node |
+|{counter:R2} |`draft` |`string\|null` |+ |Последняя рабочая версия синопсиса |
+|{counter:R2} |`final_text` |`string\|null` |+ |Финальный текст после Language Editor |
+|{counter:R2} |`critique_passed` |`boolean\|null` |+ |Пройден ли Critic |
+|{counter:R2} |`critique_score` |`integer\|null` |+ |Оценка Critic |`1..10`
+|{counter:R2} |`critique_issues` |`array of string` |+ |Проблемы, найденные Critic |
+|{counter:R2} |`revision_count` |`integer` |+ |Количество выполненных доработок Writer |
+|{counter:R2} |`clarification_count` |`integer` |+ |Количество уже полученных HITL-ответов |
+|{counter:R2} |`clarification_message` |`string\|null` |+ |Уточняющий вопрос пользователю |
+|===
+
+[[A1]]
+=== A1 Создание thread и начального SynopsisState
+API создает `thread_id = uuid4()` и формирует начальный `SynopsisState`.
+
+В state записываются `story_id`, исходный и последний пользовательский запрос, явно переданные требования, лимиты `max_revisions` и `max_clarifications`, а также начальные значения памяти.
+
+`thread_id` передается LangGraph в `configurable.thread_id` и используется PostgreSQL checkpointer для сохранения и восстановления состояния workflow.
+
+[[A2]]
+=== A2 Загрузка контекста существующей истории
+Если `story_id` не передан, узел `load_story_context` инициализирует пустую память с `story_memory_version = 0`.
+
+Если `story_id` передан, узел получает MCP tools через `MultiServerMCPClient` и вызывает `get_story_context`.
+
+При найденной истории в `SynopsisState` загружаются:
+
+- `story_title`;
+- `premise` -> `idea`;
+- `genre`;
+- `style`;
+- `language`;
+- `memory`;
+- `memory_version`.
+
+Если MCP недоступен или tool вернул техническую ошибку, workflow продолжает работу без загруженной памяти со статусом `story_context_unavailable`.
+
+Если MCP доступен и `story_id` отсутствует в БД, выбрасывается `ValueError`, который API преобразует в `HTTP 404`.
+
+.{document-diagrams-puml-name}.LoadStoryContext.activity.puml
+[plantuml]
+----
+include::.{document-diagrams-puml-name}.LoadStoryContext.activity.puml[]
+----
+
+[[A3]]
+=== A3 Анализ требований
+`collect_requirements` вызывает Ollama через `ChatOllama` и structured output `RequirementsAnalysis`.
+
+Обязательными считаются:
+
+- `idea`;
+- `genre`;
+- `style`;
+- `language`;
+- `length`.
+
+Результат LLM объединяется с уже заполненными значениями state. Дополнительно приложение программно пересчитывает `missing_fields`, `ambiguous_fields` и итоговый `requirements_complete`.
+
+Если structured output завершился ошибкой, используется deterministic fallback без LLM: проверяется наличие обязательных полей.
+
+[[A4]]
+=== A4 Human-in-the-Loop уточнение
+Если `requirements_complete = false` и лимит уточнений не достигнут:
+
+. `request_clarification` формирует уточняющий вопрос через LLM;
+. `wait_for_clarification` вызывает `interrupt()`;
+. состояние thread сохраняется checkpointer;
+. API возвращает `interrupted = true`, `status = needs_clarification` и `thread_id`.
+
+На первой остановке `clarification_count` еще не увеличен. Счетчик увеличивается после получения значения через `Command(resume=...)`.
+
+Если `clarification_count >= max_clarifications`, выполняется `clarification_limit_reached` и workflow завершается без генерации текста.
+
+.{document-diagrams-puml-name}.RequirementsHITL.activity.puml
+[plantuml]
+----
+include::.{document-diagrams-puml-name}.RequirementsHITL.activity.puml[]
+----
+
+[[A5]]
+=== A5 Создание Story Project
+После получения полного ТЗ выполняется `ensure_story_project`.
+
+Для существующего `story_id` новая запись не создается.
+
+Для новой истории через MCP tool `create_story` создается запись `story_projects` с полями `title`, `premise`, `genre`, `style`, `language`. Начальная память создается как `{}` с `memory_version = 0`.
+
+Техническое название `title` формируется из `idea` без отдельного LLM-вызова.
+
+Если MCP недоступен, устанавливается `story_project_unavailable`, но граф продолжает генерацию без постоянного `story_id`.
+
+[[A6]]
+=== A6 Выбор Writer по жанру
+`genre_router` приводит `genre` к lowercase и последовательно проверяет набор ключевых слов.
+
+[width="100%", cols="5, 5"]
+|===
+|Genre keywords |Writer
+|`фэнтези`, `fantasy` |`fantasy_writer`
+|`драма`, `drama`, `драматический`, `dramatic` |`drama_writer`
+|`триллер`, `thriller` |`thriller_writer`
+|`комедия`, `comedy`, `комедийный` |`comedy_writer`
+|Нет совпадения |`universal_writer`
+|===
+
+`route_to_writer` дополнительно проверяет, что `selected_writer` входит в разрешенный набор; неизвестное значение заменяется на `universal_writer`.
+
+[[A7]]
+=== A7 Генерация draft выбранным Writer
+Все пять Writer nodes используют общий `_run_writer` и одну модель `LLM_MODEL` с `temperature = 0.6`.
+
+В prompt передаются:
+
+- текущее ТЗ;
+- `latest_user_message`;
+- текущий `story_memory`;
+- при повторной итерации — текущий `draft` и `revision_instructions`.
+
+Новый явный запрос пользователя имеет приоритет над сохраненной памятью, если пользователь сознательно изменяет ранее установленные факты.
+
+[[A8]]
+=== A8 Проверка Critic и цикл доработки
+Critic использует structured output `CritiqueResult` и оценивает только текущий `draft`.
+
+Текст считается принятым, если одновременно:
+
+[source]
+----
+must_revise = false
+score >= 8
+----
+
+Если текст не принят и `revision_count < max_revisions`, graph route возвращает workflow в ранее выбранный Writer. При реальной ревизии Writer увеличивает `revision_count`.
+
+Если лимит ревизий достигнут, workflow все равно переходит к Language Editor.
+
+.{document-diagrams-puml-name}.WriterCritic.activity.puml
+[plantuml]
+----
+include::.{document-diagrams-puml-name}.WriterCritic.activity.puml[]
+----
+
+[[A9]]
+=== A9 Языковая редактура
+`language_editor` использует LLM с `temperature = 0.0`.
+
+Редактор исправляет грамматику, орфографию, пунктуацию, повторы и формулировки, но prompt запрещает изменять сюжет, персонажей, события и смысл.
+
+При `critique_passed = true` устанавливается `status = completed`; при переходе из-за лимита ревизий — `status = completed_with_warnings`.
+
+[[A10]]
+=== A10 Формирование StoryMemory
+`memory_manager` после получения `final_text` формирует новый полный structured snapshot `StoryMemory`.
+
+Структура памяти содержит:
+
+- `summary`;
+- `characters[]` (`name`, `role`, `current_state`, `goals[]`);
+- `world_facts[]`;
+- `locations[]`;
+- `unresolved_threads[]`;
+- `latest_events[]`;
+- `style_rules[]`.
+
+Memory Manager получает предыдущий snapshot, последний пользовательский запрос и `final_text`.
+
+Если LLM не смог сформировать корректный `StoryMemory`, старая память не перезаписывается и устанавливается `story_memory_ready = false`.
+
+[[A11]]
+=== A11 Сохранение generation и StoryMemory через MCP
+`persist_story` один раз получает доступные MCP tools.
+
+Сначала, если доступен `save_synopsis`, система пытается сохранить generation в `synopsis_generations` и получить `synopsis_id`.
+
+Затем, независимо от успеха `save_synopsis`, если есть `story_id`, `story_memory_ready = true` и доступен `save_story_memory`, сохраняется новая версия памяти.
+
+`source_generation_id` может быть `null`, если generation не удалось сохранить.
+
+При недоступности MCP финальный текст не теряется; `story_memory_saved = false`, а status остается `completed` или `completed_with_warnings`.
+
+.{document-diagrams-puml-name}.PersistStory.activity.puml
+[plantuml]
+----
+include::.{document-diagrams-puml-name}.PersistStory.activity.puml[]
+----
+
+== Примеры
+
+=== Успешная генерация новой истории
+.Request
+[source]
+----
+POST /api/v1/synopsis
+Content-Type: application/json
+
+{
+  "message": "Напиши мрачный психологический триллер на русском на 5 абзацев о программисте, чьи коммиты меняют прошлое",
+  "max_revisions": 3,
+  "max_clarifications": 3
+}
+----
+
+.Response
+[source]
+----
+HTTP 200 OK
+
+{
+  "story_id": 4,
+  "synopsis_id": 20,
+  "story_memory_version": 1,
+  "story_memory_saved": true,
+  "thread_id": "3b4f2c2f-7a30-4d2d-9f2e-1d7744d2f3b5",
+  "interrupted": false,
+  "status": "completed",
+  "selected_writer": "thriller_writer",
+  "draft": "Черновик...",
+  "final_text": "Финальный синопсис...",
+  "critique_passed": true,
+  "critique_score": 9,
+  "critique_issues": [],
+  "revision_count": 1,
+  "clarification_count": 0,
+  "clarification_message": null
+}
+----
+
+=== Требуется уточнение
+.Request
+[source]
+----
+POST /api/v1/synopsis
+Content-Type: application/json
+
+{
+  "message": "Напиши историю о программисте"
+}
+----
+
+.Response
+[source]
+----
+HTTP 200 OK
+
+{
+  "story_id": null,
+  "synopsis_id": null,
+  "story_memory_version": 0,
+  "story_memory_saved": false,
+  "thread_id": "8cf2c3f5-7ec8-40a5-bf6d-5f404e0e9134",
+  "interrupted": true,
+  "status": "needs_clarification",
+  "selected_writer": null,
+  "draft": null,
+  "final_text": null,
+  "critique_passed": null,
+  "critique_score": null,
+  "critique_issues": [],
+  "revision_count": 0,
+  "clarification_count": 0,
+  "clarification_message": "Уточните жанр, стилистику, язык и требуемый объём."
+}
+----
+
+=== Продолжение существующей истории
+.Request
+[source]
+----
+POST /api/v1/synopsis
+Content-Type: application/json
+
+{
+  "story_id": 4,
+  "message": "Представим, что прошлый синопсис был первым сезоном. Сделай синопсис следующего сезона на 5 абзацев.",
+  "max_revisions": 3,
+  "max_clarifications": 3
+}
+----
+
+.Response
+[source]
+----
+HTTP 200 OK
+
+{
+  "story_id": 4,
+  "synopsis_id": 22,
+  "story_memory_version": 3,
+  "story_memory_saved": true,
+  "thread_id": "новый-thread-id",
+  "interrupted": false,
+  "status": "completed",
+  "selected_writer": "universal_writer",
+  "draft": "Черновик продолжения...",
+  "final_text": "Финальный синопсис продолжения...",
+  "critique_passed": true,
+  "critique_score": 9,
+  "critique_issues": [],
+  "revision_count": 0,
+  "clarification_count": 0,
+  "clarification_message": null
+}
+----
+
+=== Не существующий story_id
+.Request
+[source]
+----
+POST /api/v1/synopsis
+Content-Type: application/json
+
+{
+  "story_id": 999999,
+  "message": "Продолжи историю на 5 абзацев"
+}
+----
+
+.Response
+[source]
+----
+HTTP 404 Not Found
+
+{
+  "detail": "Story 999999 was not found."
+}
+----

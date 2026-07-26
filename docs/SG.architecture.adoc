@@ -1,0 +1,163 @@
+:document-name: SG.architecture
+:diagrams-directory: /diagrams
+:diagrams-puml-directory: {diagrams-directory}/puml
+:document-diagrams-puml-name: {diagrams-puml-directory}/{document-name}
+
+:toc: macro
+:sectnums:
+
+= Synopsis Generator - Архитектура
+
+[.text-right]
+{document-name}.adoc
+
+toc::[]
+
+== Описание
+Synopsis Generator — stateful сервис генерации художественных синопсисов.
+
+Основной сервис построен на `FastAPI` и `LangGraph`. LLM работает локально через Ollama. Техническое состояние LangGraph сохраняется в PostgreSQL через `AsyncPostgresSaver`.
+
+Долговременная предметная память литературных проектов отделена от LangGraph checkpoint и хранится в собственных таблицах PostgreSQL. Доступ к этим таблицам выполняется через отдельный FastMCP Server.
+
+link:https://github.com/C4dB4ne/synopsis_generator[] - репозиторий проекта
+
+== Диаграмма компонентов
+.{document-diagrams-puml-name}.components.puml
+[plantuml]
+----
+include::.{document-diagrams-puml-name}.components.puml[]
+----
+
+== Основные компоненты
+[width="100%", cols="3, 7"]
+|===
+|Component |Description
+|`FastAPI` |HTTP endpoints `/health`, `/health/dependencies`, `/api/v1/synopsis`, `/api/v1/synopsis/resume`
+|`LangGraph StateGraph` |Оркестрация узлов, условных маршрутов, циклов Writer/Critic и Human-in-the-Loop
+|`SynopsisState` |Общий state contract между nodes
+|`AsyncPostgresSaver` |Checkpoint технического состояния thread для persistence и resume
+|`Ollama / ChatOllama` |LLM для requirements, clarification, Writer, Critic, Editor и Memory Manager
+|`MultiServerMCPClient` |Клиент MCP; в текущей конфигурации подключен один server entry `synopsis`
+|`FastMCP Server` |Предоставляет пять tools для health и предметного persistence
+|`PostgreSQL` |LangGraph checkpoint tables + предметные таблицы Synopsis Generator
+|`Alembic` |Миграции предметных таблиц; checkpoint tables не управляются Alembic
+|===
+
+== LangGraph
+Основной graph определен в `build_graph()`.
+
+=== Узлы
+[width="100%", cols="3, 7"]
+|===
+|Node |Назначение
+|`load_story_context` |Загрузка долговременной памяти по `story_id`
+|`collect_requirements` |Structured-анализ ТЗ
+|`request_clarification` |Формирование HITL-вопроса
+|`wait_for_clarification` |`interrupt()` и получение resume value
+|`clarification_limit_reached` |Завершение при исчерпании лимита уточнений
+|`ensure_story_project` |Создание нового `story_id` через MCP
+|`genre_router` |Определение `selected_writer`
+|`fantasy_writer` |Writer для фэнтези
+|`drama_writer` |Writer для драмы
+|`thriller_writer` |Writer для триллера
+|`comedy_writer` |Writer для комедии
+|`universal_writer` |Fallback Writer
+|`critic` |Structured-проверка текущего draft
+|`language_editor` |Финальная языковая редактура
+|`memory_manager` |Формирование нового StoryMemory snapshot
+|`persist_story` |Сохранение generation и memory через MCP
+|===
+
+=== Маршрутизация
+После `collect_requirements`:
+
+- полное ТЗ -> `ensure_story_project`;
+- неполное ТЗ и доступные попытки -> `request_clarification`;
+- лимит уточнений -> `clarification_limit_reached`.
+
+После `genre_router` выполняется один из пяти Writer.
+
+После `critic`:
+
+- `critique_passed = true` -> `language_editor`;
+- `revision_count >= max_revisions` -> `language_editor`;
+- иначе -> ранее выбранный Writer.
+
+== LLM
+Все роли используют одну модель из `LLM_MODEL`, но разные значения temperature:
+
+[width="100%", cols="5, 2, 5"]
+|===
+|Role |Temperature |Structured output
+|Requirements Analyzer |`0.0` |`RequirementsAnalysis`
+|Clarification |`0.1` |`ClarificationRequest`
+|Writer |`0.6` |Нет
+|Critic |`0.1` |`CritiqueResult`
+|Language Editor |`0.0` |Нет
+|Memory Manager |`0.0` |`StoryMemory`
+|===
+
+Для всех `ChatOllama` используется `reasoning = false`.
+
+== Состояние и память
+
+=== thread_id
+`thread_id` относится к одному LangGraph workflow.
+
+Новый `POST /api/v1/synopsis` создает новый UUID. `/resume` использует тот же UUID для восстановления checkpoint.
+
+=== story_id
+`story_id` относится к литературному проекту и сохраняется между независимыми LangGraph threads.
+
+=== synopsis_id
+`synopsis_id` идентифицирует конкретную сохраненную generation.
+
+=== Разделение persistence
+[width="100%", cols="3, 7"]
+|===
+|Storage |Назначение
+|LangGraph checkpoint tables |Техническое состояние одного thread; создаются `AsyncPostgresSaver.setup()`
+|`story_projects` |Текущий канонический StoryMemory snapshot
+|`story_memory_versions` |Immutable история версий памяти
+|`synopsis_generations` |История результатов генерации
+|===
+
+Подробнее: link:db/SG.domain.adoc[].
+
+== MCP
+MCP Server работает отдельным контейнером по HTTP на порту `8001`.
+
+MCP client получает tools во время workflow. При timeout или ошибке `get_mcp_tools_safely()` возвращает пустой список.
+
+Это обеспечивает graceful degradation предметного persistence: генерация через Ollama может продолжиться без MCP. При этом PostgreSQL остается обязательным для старта FastAPI, поскольку используется `AsyncPostgresSaver`.
+
+Подробнее: link:SG.mcp.adoc[].
+
+== Логирование
+Logger `synopsis-generator` пишет:
+
+- в stdout;
+- в `{LOGS_DIRECTORY}/app.log`.
+
+Формат:
+
+[source]
+----
+YYYY-MM-DD HH:MM:SS | LEVEL | synopsis-generator | message
+----
+
+Используется `TimedRotatingFileHandler` с ежедневной ротацией в полночь и `backupCount = 7`.
+
+`log_graph_node` логирует START, END, `duration_ms`, новый status и exceptions для обернутых nodes.
+
+`wait_for_clarification` намеренно не обернут этим декоратором, чтобы `interrupt()` не попадал под общий обработчик исключений.
+
+== Ограничения
+- routing Writer основан на keyword matching;
+- один `LLM_MODEL` используется для всех ролей;
+- полноценная chat history не хранится отдельной предметной сущностью;
+- централизованная retry/backoff policy не реализована;
+- настроен один MCP server entry;
+- semantic/vector retrieval по истории не реализован;
+- аутентификация и ownership story не реализованы.

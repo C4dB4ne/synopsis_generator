@@ -1,0 +1,30 @@
+@startuml
+title GET /health/dependencies - Проверить Ollama и PostgreSQL
+start
+
+:Request;
+note: R1
+
+#palegreen :retrieve Ollama version\nby GET `/api/version`\nfrom **OLLAMA_BASE_URL**;
+note: A1
+
+if (Ollama request successful?) then (-)
+    :HTTP 503 Service Unavailable\nwith `detail` = "Ollama unavailable: ...";
+    end
+endif
+
+#palegreen :connect to PostgreSQL\nusing **DATABASE_URL**\nand execute\n`SELECT current_database(), current_user`;
+note: A2
+
+if (PostgreSQL check successful?) then (-)
+    :HTTP 503 Service Unavailable\nwith `detail` = "PostgreSQL unavailable: ...";
+    end
+endif
+
+:Build response\nwith `ollama` and `postgres`;
+note: R2
+
+:HTTP 200 OK;
+end
+
+@enduml

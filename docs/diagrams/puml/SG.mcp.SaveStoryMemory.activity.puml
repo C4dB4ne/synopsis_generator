@@ -1,0 +1,36 @@
+@startuml
+title T5 save_story_memory - Атомарное сохранение версии памяти
+start
+
+:Input:\n**story_id**, **memory**,\n**source_generation_id**;
+note: T5.R1
+
+#palegreen :connect to PostgreSQL\nusing DATABASE_URL;
+
+:BEGIN transaction;
+
+:SELECT `memory_version`\nFROM `story_projects`\nWHERE `id` = **story_id**\nFOR UPDATE;
+
+if (Story found?) then (+)
+
+    :**newVersion** = **memory_version** + 1;
+
+    :UPDATE `story_projects`\nSET `memory` = **memory**,\n`memory_version` = **newVersion**,\n`updated_at` = NOW();
+
+    :INSERT INTO `story_memory_versions`\n(`story_id`, `version`, `memory`, `source_generation_id`);
+
+    :COMMIT;
+
+    :Return `saved` = true,\n`memory_version` = **newVersion**;
+    note: T5.R2
+
+else (-)
+
+    :Return `saved` = false\nwith error "Story ... was not found";
+    note: T5.R2
+
+endif
+
+end
+
+@enduml

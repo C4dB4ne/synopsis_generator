@@ -1,0 +1,43 @@
+@startuml
+title A11 persist_story - Сохранение generation и StoryMemory
+start
+
+#palegreen :get MCP tools\nusing MultiServerMCPClient;
+
+if (tools available?) then (+)
+
+    if (`save_synopsis` available?) then (+)
+        #palegreen :create in DB `synopsis_generations`\nby MCP tool `save_synopsis`;
+        if (`saved` = true) then (+)
+            :**synopsis_id** = result.synopsis_id;
+        else (-)
+            :**synopsis_id** = null;
+        endif
+    else (-)
+        :**synopsis_id** = null;
+    endif
+
+    if (**story_id** exists\nAND **story_memory_ready** = true\nAND `save_story_memory` available?) then (+)
+
+        #palegreen :save new full memory snapshot\nby MCP tool `save_story_memory`\nwith `source_generation_id` = **synopsis_id**;
+
+        if (`saved` = true) then (+)
+            :**story_memory_saved** = true;
+            :**story_memory_version** = result.memory_version;
+        else (-)
+            :**story_memory_saved** = false;
+        endif
+
+    else (-)
+        :**story_memory_saved** = false;
+    endif
+
+else (-)
+    :**story_memory_saved** = false;
+endif
+
+:Set final status:\n`completed` or `completed_with_warnings`;
+
+end
+
+@enduml

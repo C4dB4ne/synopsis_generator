@@ -1,0 +1,43 @@
+@startuml
+title Synopsis Generator - Компоненты
+skinparam packageStyle rectangle
+skinparam linetype ortho
+
+package "Synopsis Generator" as SG {
+    [FastAPI] as API
+    [LangGraph StateGraph] as Graph
+    [MCP Client\nMultiServerMCPClient] as Client
+    [Logger] as Logger
+}
+
+package "Synopsis MCP Server" as MCP {
+    [FastMCP] as FastMCP
+    [MCP Tools] as Tools
+    [Services] as Services
+}
+
+database "PostgreSQL" as DB
+cloud "Ollama" as Ollama
+
+API --> Graph : invoke / resume
+Graph --> Ollama : ChatOllama
+Graph --> Client : load/call tools
+Client --> FastMCP : HTTP MCP
+FastMCP --> Tools
+Tools --> Services
+Services --> DB : domain persistence
+Services --> API : health check
+Services --> Ollama : health check
+API --> DB : AsyncPostgresSaver
+Graph ..> Logger
+API ..> Logger
+
+note right of DB
+    Одна БД содержит:
+    - LangGraph checkpoint tables
+    - story_projects
+    - synopsis_generations
+    - story_memory_versions
+end note
+
+@enduml

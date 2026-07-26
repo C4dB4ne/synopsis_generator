@@ -1,0 +1,155 @@
+:document-name: SG-1-U.PostResumeSynopsis
+:diagrams-directory: /diagrams
+:diagrams-puml-directory: {diagrams-directory}/puml
+:document-diagrams-puml-name: {diagrams-puml-directory}/{document-name}
+
+:toc: macro
+:sectnums:
+
+= POST /api/v1/synopsis/resume - Продолжить приостановленный workflow
+
+[.text-right]
+{document-name}.adoc
+
+toc::[]
+
+== Описание
+Метод `POST /api/v1/synopsis/resume` продолжает LangGraph workflow, ранее приостановленный через `interrupt()` в `wait_for_clarification`.
+
+Клиент передает `thread_id` из ответа `POST /api/v1/synopsis` и свободный ответ пользователя на уточняющий вопрос.
+
+API вызывает `Command(resume=message)` с тем же `configurable.thread_id`. PostgreSQL checkpointer восстанавливает состояние workflow, после чего `wait_for_clarification` выполняется заново и получает resume value.
+
+**ПРИМЕЧАНИЕ**: Этот endpoint не предназначен для создания следующей части уже завершенной истории. Для продолжения истории между независимыми workflow используется новый link:SG-1-C.PostCreateSynopsis.adoc[] с существующим `story_id`.
+
+== Доступные роли
+Аутентификация и пользовательские роли в текущей версии не реализованы.
+
+== Диаграмма активности
+.{document-diagrams-puml-name}.activity.puml
+[plantuml]
+----
+include::.{document-diagrams-puml-name}.activity.puml[]
+----
+
+== Описание алгоритма
+
+=== R1 Request
+[width="100%", cols="1, 5, 3, 1, 5, 5"]
+|===
+|# |Parameter |Type |Required |Description |Comment
+6+^|Body
+|{counter:R1} |`thread_id` |`string` |+ |Идентификатор ранее приостановленного workflow |`not-empty`; max length `255`
+|{counter:R1} |`message` |`string` |+ |Ответ пользователя на уточняющий вопрос |`not-empty`
+|===
+
+=== R2 Response
+Формат ответа совпадает с link:SG-1-C.PostCreateSynopsis.adoc#R2[].
+
+[[A1]]
+=== A1 Восстановление workflow
+API вызывает:
+
+[source]
+----
+Command(resume=payload.message)
+----
+
+и передает прежний `thread_id` в:
+
+[source]
+----
+configurable.thread_id
+----
+
+Checkpointer восстанавливает сохраненное состояние thread.
+
+[[A2]]
+=== A2 Получение ответа в wait_for_clarification
+По правилам LangGraph прерванный узел запускается заново с начала.
+
+Повторный вызов `interrupt()` возвращает переданное resume value вместо новой остановки. Узел:
+
+- записывает значение в `latest_user_message`;
+- увеличивает `clarification_count` на `1`;
+- очищает `clarification_message`;
+- устанавливает `status = clarification_received`.
+
+[[A3]]
+=== A3 Повторный анализ требований
+После `wait_for_clarification` graph edge возвращает workflow в `collect_requirements`.
+
+См. link:SG-1-C.PostCreateSynopsis.adoc#A3[].
+
+Если требований все еще недостаточно и лимит не достигнут, workflow снова приостанавливается через `interrupt()`.
+
+Если `clarification_count >= max_clarifications`, выполняется `clarification_limit_reached`.
+
+[[A4]]
+=== A4 Продолжение генерации после полного ТЗ
+Если требования полны, workflow продолжает алгоритм с создания/проверки Story Project.
+
+См.:
+
+- link:SG-1-C.PostCreateSynopsis.adoc#A5[];
+- link:SG-1-C.PostCreateSynopsis.adoc#A6[];
+- link:SG-1-C.PostCreateSynopsis.adoc#A7[];
+- link:SG-1-C.PostCreateSynopsis.adoc#A8[];
+- link:SG-1-C.PostCreateSynopsis.adoc#A9[];
+- link:SG-1-C.PostCreateSynopsis.adoc#A10[];
+- link:SG-1-C.PostCreateSynopsis.adoc#A11[].
+
+== Примеры
+
+=== Успешное уточнение
+.Request
+[source]
+----
+POST /api/v1/synopsis/resume
+Content-Type: application/json
+
+{
+  "thread_id": "8cf2c3f5-7ec8-40a5-bf6d-5f404e0e9134",
+  "message": "Жанр: триллер, стилистика: мрачная, язык: русский, объём: 5 абзацев"
+}
+----
+
+.Response
+[source]
+----
+HTTP 200 OK
+
+{
+  "story_id": 7,
+  "synopsis_id": 31,
+  "story_memory_version": 1,
+  "story_memory_saved": true,
+  "thread_id": "8cf2c3f5-7ec8-40a5-bf6d-5f404e0e9134",
+  "interrupted": false,
+  "status": "completed",
+  "selected_writer": "thriller_writer",
+  "draft": "Черновик...",
+  "final_text": "Финальный синопсис...",
+  "critique_passed": true,
+  "critique_score": 9,
+  "critique_issues": [],
+  "revision_count": 0,
+  "clarification_count": 1,
+  "clarification_message": null
+}
+----
+
+=== Требуется еще одно уточнение
+.Response
+[source]
+----
+HTTP 200 OK
+
+{
+  "thread_id": "8cf2c3f5-7ec8-40a5-bf6d-5f404e0e9134",
+  "interrupted": true,
+  "status": "needs_clarification",
+  "clarification_count": 1,
+  "clarification_message": "Уточните требуемый объём текста."
+}
+----

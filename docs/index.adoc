@@ -1,0 +1,15 @@
+:toc: macro
+:sectnums:
+
+= Synopsis Generator - Комплект документации
+
+toc::[]
+
+== Документы
+- link:SG.architecture.adoc[Архитектура]
+- link:SG-1-C.PostCreateSynopsis.adoc[POST /api/v1/synopsis]
+- link:SG-1-U.PostResumeSynopsis.adoc[POST /api/v1/synopsis/resume]
+- link:SG-2-R.GetHealth.adoc[GET /health]
+- link:SG-2-R.GetHealthDependencies.adoc[GET /health/dependencies]
+- link:SG.mcp.adoc[MCP Server]
+- link:db/SG.domain.adoc[Домен и БД]
