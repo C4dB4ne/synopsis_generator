@@ -37,8 +37,7 @@ include::.{document-diagrams-puml-name}.activity.puml[]
 === R1 Request
 [width="100%", cols="1, 5, 3, 1, 5, 5"]
 |===
-|# |Parameter |Type |Required |Description |Comment
-6+^|Body
+|# |**Parameter** |**Type** |**Required** |**Description** |**Comment**
 |{counter:R1} |`thread_id` |`string` |+ |Идентификатор ранее приостановленного workflow |`not-empty`; max length `255`
 |{counter:R1} |`message` |`string` |+ |Ответ пользователя на уточняющий вопрос |`not-empty`
 |===

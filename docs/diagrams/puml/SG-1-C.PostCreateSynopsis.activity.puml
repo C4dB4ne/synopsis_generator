@@ -35,7 +35,7 @@ end note
 if (**requirements_complete** = false) then (+)
     if (**clarification_count** >= **max_clarifications**) then (+)
         :clarification_limit_reached;
-        :Возвращает \n `status` = **clarification_limit_reached**;
+        :Сформировать ответ\nс `status` = **clarification_limit_reached**;
         note: R2
         :HTTP 200 OK;
         end
@@ -46,13 +46,9 @@ if (**requirements_complete** = false) then (+)
             LLM формирует уточняющий вопрос по недостающим
             и неоднозначным требованиям.
         end note
-        :wait_for_clarification\n`interrupt()`;\ncheckpoint thread state;
-        note
-            A4
-            `wait_for_clarification` вызывает `interrupt()`,
-            а checkpointer сохраняет состояние текущего `thread_id`.
-        end note
-        :Возвращает\n `interrupted` = true,\n`status` = **needs_clarification**,\n`thread_id` = **threadId**;
+        :wait_for_clarification\n`interrupt()`;\nсохранить состояние потока в checkpoint;
+        note: A4
+        :Сформировать ответ\nc `interrupted` = true,\n`status` = **needs_clarification**,\n`thread_id` = **threadId**;
         note
             R2
             API возвращает `needs_clarification`, текст вопроса

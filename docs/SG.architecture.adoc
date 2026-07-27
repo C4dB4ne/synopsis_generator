@@ -32,7 +32,7 @@ include::.{document-diagrams-puml-name}.components.puml[]
 == Основные компоненты
 [width="100%", cols="3, 7"]
 |===
-|Component |Description
+|**Component** |**Description**
 |`FastAPI` |HTTP endpoints `/health`, `/health/dependencies`, `/api/v1/synopsis`, `/api/v1/synopsis/resume`
 |`LangGraph StateGraph` |Оркестрация узлов, условных маршрутов, циклов Writer/Critic и Human-in-the-Loop
 |`SynopsisState` |Общий state contract между nodes
@@ -50,7 +50,7 @@ include::.{document-diagrams-puml-name}.components.puml[]
 === Узлы
 [width="100%", cols="3, 7"]
 |===
-|Node |Назначение
+|**Node** |**Назначение**
 |`load_story_context` |Загрузка долговременной памяти по `story_id`
 |`collect_requirements` |Structured-анализ ТЗ
 |`request_clarification` |Формирование HITL-вопроса
@@ -89,7 +89,7 @@ include::.{document-diagrams-puml-name}.components.puml[]
 
 [width="100%", cols="5, 2, 5"]
 |===
-|Role |Temperature |Structured output
+|**Role** |**Temperature** |**Structured output**
 |Requirements Analyzer |`0.0` |`RequirementsAnalysis`
 |Clarification |`0.1` |`ClarificationRequest`
 |Writer |`0.6` |Нет
@@ -116,7 +116,7 @@ include::.{document-diagrams-puml-name}.components.puml[]
 === Разделение persistence
 [width="100%", cols="3, 7"]
 |===
-|Storage |Назначение
+|**Storage** |**Назначение**
 |LangGraph checkpoint tables |Техническое состояние одного thread; создаются `AsyncPostgresSaver.setup()`
 |`story_projects` |Текущий канонический StoryMemory snapshot
 |`story_memory_versions` |Immutable история версий памяти

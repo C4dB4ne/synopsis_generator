@@ -43,8 +43,7 @@ include::.{document-diagrams-puml-name}.activity.puml[]
 === R1 Request
 [width="100%", cols="1, 5, 3, 1, 5, 5"]
 |===
-|# |Parameter |Type |Required |Description |Comment
-6+^|Body
+|# |**Parameter** |**Type** |**Required** |**Description** |**Comment**
 |{counter:R1} |`story_id` |`integer\|null` |- |Идентификатор существующей истории |`>= 1`; не передавать для новой истории
 |{counter:R1} |`message` |`string` |+ |Свободное описание требуемого результата |`not-empty`
 |{counter:R1} |`idea` |`string\|null` |- |Основная идея произведения |Может быть извлечена из `message`
@@ -59,8 +58,7 @@ include::.{document-diagrams-puml-name}.activity.puml[]
 === R2 Response
 [width="100%", cols="1, 5, 3, 1, 5, 5"]
 |===
-|# |Parameter |Type |Required |Description |Comment
-6+^|Body
+|# |**Parameter** |**Type** |**Required** |**Description** |**Comment**
 |{counter:R2} |`story_id` |`integer\|null` |+ |Идентификатор литературного проекта |Может быть `null`, если MCP недоступен
 |{counter:R2} |`synopsis_id` |`integer\|null` |+ |Идентификатор сохраненной генерации |Заполняется при успешном `save_synopsis`
 |{counter:R2} |`story_memory_version` |`integer` |+ |Текущая версия долговременной памяти |Начальное значение `0`
