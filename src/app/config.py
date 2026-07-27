@@ -8,6 +8,7 @@ class Settings(BaseSettings):
 
     ollama_base_url: str
     llm_model: str
+    llm_num_ctx: int = 8192
 
     database_url: str
 

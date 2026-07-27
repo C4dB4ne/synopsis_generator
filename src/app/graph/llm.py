@@ -10,6 +10,7 @@ def create_requirements_llm() -> ChatOllama:
     return ChatOllama(
         model=settings.llm_model,
         base_url=settings.ollama_base_url,
+        num_ctx=settings.llm_num_ctx,
         temperature=0.0,
         reasoning=False,
     )
@@ -22,6 +23,7 @@ def create_clarification_llm() -> ChatOllama:
     return ChatOllama(
         model=settings.llm_model,
         base_url=settings.ollama_base_url,
+        num_ctx=settings.llm_num_ctx,
         temperature=0.1,
         reasoning=False,
     )
@@ -35,6 +37,7 @@ def create_writer_llm() -> ChatOllama:
     return ChatOllama(
         model=settings.llm_model,
         base_url=settings.ollama_base_url,
+        num_ctx=settings.llm_num_ctx,
         temperature=0.6,
         reasoning=False,
     )
@@ -47,6 +50,7 @@ def create_critic_llm() -> ChatOllama:
     return ChatOllama(
         model=settings.llm_model,
         base_url=settings.ollama_base_url,
+        num_ctx=settings.llm_num_ctx,
         temperature=0.1,
         reasoning=False,
     )
@@ -59,6 +63,7 @@ def create_editor_llm() -> ChatOllama:
     return ChatOllama(
         model=settings.llm_model,
         base_url=settings.ollama_base_url,
+        num_ctx=settings.llm_num_ctx,
         temperature=0.0,
         reasoning=False,
     )
@@ -72,6 +77,7 @@ def create_memory_llm() -> ChatOllama:
     return ChatOllama(
         model=settings.llm_model,
         base_url=settings.ollama_base_url,
+        num_ctx=settings.llm_num_ctx,
         temperature=0.0,
         reasoning=False,
     )
